@@ -29,6 +29,7 @@ class UploadVideo extends Fieldtype
     {
         return [
             'uploadUrl' => cp_route('upload-video.store'),
+            'chunkBytes' => Value::chunkBytes(),
             'posterUrl' => cp_route('upload-video.poster', ['id' => '__ID__']),
             'deleteUrl' => cp_route('upload-video.destroy', ['id' => '__ID__']),
         ];

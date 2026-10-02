@@ -4,7 +4,10 @@ namespace Vizuall\UploadVideo\Http;
 
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Str;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Vizuall\UploadVideo\Chunks;
 use Vizuall\UploadVideo\Encode\Processor;
 use Vizuall\UploadVideo\Value;
 
@@ -12,31 +15,59 @@ class UploadController extends Controller
 {
     public function store(Request $request)
     {
-        $file = $request->file('video');
+        Chunks::sweep();
+
+        $file = $request->file('chunk');
 
         if ($file === null || ! $file->isValid()) {
+            $code = $file ? $file->getError() : \UPLOAD_ERR_NO_FILE;
+
+            if (in_array($code, [\UPLOAD_ERR_INI_SIZE, \UPLOAD_ERR_FORM_SIZE], true)) {
+                return response()->json(['message' => 'Serveren afviser så stor en del af filen. Genindlæs siden og prøv igen.'], 422);
+            }
+
             return response()->json(['message' => 'Vælg en videofil.'], 422);
         }
 
-        $extension = strtolower($file->getClientOriginalExtension());
-        $mime = (string) $file->getMimeType();
+        if ($file->getSize() > Value::chunkBytes() + 8192) {
+            return response()->json(['message' => 'Serveren afviser så stor en del af filen. Genindlæs siden og prøv igen.'], 422);
+        }
 
-        if (! in_array($extension, Value::EXTENSIONS, true) || ! str_starts_with($mime, 'video/')) {
+        $filename = Value::filename((string) $request->input('filename', ''));
+        $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+        if (! in_array($extension, Value::EXTENSIONS, true)) {
             return response()->json(['message' => 'Kun videofiler (mp4, webm, mov).'], 422);
         }
 
-        $id = (string) \Illuminate\Support\Str::uuid();
-        $directory = Processor::publicDir();
+        $total = (int) $request->input('total', 0);
+        $index = (int) $request->input('index', -1);
 
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
-            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 500);
+        if ($total < 1 || $total > Chunks::maxChunks() || $index < 0 || $index >= $total) {
+            return response()->json(['message' => 'Videoen kunne ikke uploades.'], 422);
         }
 
-        $file->move($directory, $id.'.'.$extension);
+        $id = $index === 0 ? (string) Str::uuid() : (string) $request->input('id', '');
+
+        if (! Value::idOk($id)) {
+            return response()->json(['message' => 'Videoen kunne ikke uploades.'], 422);
+        }
+
+        try {
+            Chunks::store($id, $index, $file);
+
+            if ($index + 1 < $total) {
+                return ['id' => $id, 'received' => $index];
+            }
+
+            Chunks::finish($id, $total, $extension);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
 
         return [
             'id' => $id,
-            'filename' => Value::filename($file->getClientOriginalName()),
+            'filename' => $filename,
             'extension' => $extension,
             'poster_at' => 1,
         ];

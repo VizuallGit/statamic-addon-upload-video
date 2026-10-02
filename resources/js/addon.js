@@ -15,6 +15,7 @@
             setup(props, { emit }) {
                 const video = ref(read(props.value));
                 const busy = ref(false);
+                const status = ref('');
                 const error = ref('');
                 const knownDuration = ref(video.value.duration);
                 let player = null;
@@ -196,40 +197,65 @@
 
                     error.value = '';
                     busy.value = true;
+                    status.value = 'Uploader…';
                     const previous = video.value.id;
+                    const chunkBytes = Math.max(1, Number(props.meta.chunkBytes) || (1024 * 1024));
+                    const total = Math.max(1, Math.ceil(file.size / chunkBytes));
 
                     try {
-                        const body = new FormData();
-                        body.append('video', file);
-                        const response = await fetch(props.meta.uploadUrl, {
-                            method: 'POST',
-                            credentials: 'same-origin',
-                            headers: {
-                                'X-CSRF-TOKEN': Statamic.$config.get('csrfToken'),
-                                'X-Requested-With': 'XMLHttpRequest',
-                                'Accept': 'application/json',
-                            },
-                            body,
-                        });
-                        const json = await response.json().catch(() => ({}));
-                        if (!response.ok) {
-                            throw new Error(json.message || 'Videoen kunne ikke uploades.');
+                        let id = '';
+                        let saved = null;
+
+                        for (let index = 0; index < total; index++) {
+                            status.value = total > 1 ? ('Del ' + (index + 1) + ' af ' + total) : 'Uploader…';
+                            const slice = file.slice(index * chunkBytes, Math.min(file.size, (index + 1) * chunkBytes));
+                            const body = new FormData();
+                            body.append('index', String(index));
+                            body.append('total', String(total));
+                            body.append('filename', file.name);
+                            if (id) {
+                                body.append('id', id);
+                            }
+                            body.append('chunk', slice, file.name);
+                            const response = await fetch(props.meta.uploadUrl, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'X-CSRF-TOKEN': Statamic.$config.get('csrfToken'),
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                    'Accept': 'application/json',
+                                },
+                                body,
+                            });
+                            const json = await response.json().catch(() => ({}));
+                            if (!response.ok || !json.id) {
+                                throw new Error(json.message || 'Videoen kunne ikke uploades.');
+                            }
+                            id = json.id;
+                            if (json.filename) {
+                                saved = json;
+                            }
                         }
 
-                        json.size = video.value.size;
-                        json.quality = video.value.quality;
-                        json.audio = video.value.audio;
-                        video.value = read(json);
+                        if (!saved) {
+                            throw new Error('Videoen kunne ikke uploades.');
+                        }
+
+                        saved.size = video.value.size;
+                        saved.quality = video.value.quality;
+                        saved.audio = video.value.audio;
+                        video.value = read(saved);
                         knownDuration.value = video.value.duration;
                         emitValue();
 
-                        if (previous && previous !== json.id) {
+                        if (previous && previous !== saved.id) {
                             remove(previous);
                         }
                     } catch (e) {
                         error.value = e.message || 'Videoen kunne ikke uploades.';
                     } finally {
                         busy.value = false;
+                        status.value = '';
                     }
                 }
 
@@ -279,7 +305,7 @@
                                 disabled: busy.value,
                                 onChange: upload,
                             }),
-                            busy.value ? 'Uploader…' : 'Vælg video',
+                            busy.value ? (status.value || 'Uploader…') : 'Vælg video',
                         ]));
                     } else {
                         children.push(h('video', {
@@ -330,7 +356,7 @@
                                     disabled: busy.value,
                                     onChange: upload,
                                 }),
-                                busy.value ? 'Uploader…' : 'Skift video',
+                                busy.value ? (status.value || 'Uploader…') : 'Skift video',
                             ]),
                             h('button', { type: 'button', class: 'vzl-uv-link', onClick: clear }, 'Fjern'),
                         ]));

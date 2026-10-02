@@ -78,4 +78,50 @@ final class Value
 
         return mb_substr($name, 0, 180);
     }
+
+    /**
+     * Each browser request stays under PHP's post limit. 0 from ini means unlimited.
+     */
+    public static function iniToBytes(string $raw): int
+    {
+        $raw = trim($raw);
+
+        if ($raw === '' || $raw === '0' || $raw === '-1') {
+            return 0;
+        }
+
+        $number = (float) $raw;
+        $unit = strtolower(substr($raw, -1));
+        $bytes = match ($unit) {
+            'g' => (int) ($number * 1024 * 1024 * 1024),
+            'm' => (int) ($number * 1024 * 1024),
+            'k' => (int) ($number * 1024),
+            default => (int) $number,
+        };
+
+        return max(0, $bytes);
+    }
+
+    public static function chunkBytes(): int
+    {
+        $limits = array_filter([
+            self::iniToBytes((string) ini_get('upload_max_filesize')),
+            self::iniToBytes((string) ini_get('post_max_size')),
+        ], static fn (int $bytes): bool => $bytes > 0);
+
+        $limit = $limits === [] ? (8 * 1024 * 1024) : min($limits);
+        $safe = max(1, (int) floor($limit * 0.7));
+
+        return min(1024 * 1024, $safe);
+    }
+
+    public static function videoSignatureOk(string $head, string $extension): bool
+    {
+        return match ($extension) {
+            'mp4', 'm4v', 'mov' => strlen($head) >= 8 && substr($head, 4, 4) === 'ftyp',
+            'webm' => str_starts_with($head, "\x1A\x45\xDF\xA3"),
+            'ogv' => str_starts_with($head, 'OggS'),
+            default => false,
+        };
+    }
 }

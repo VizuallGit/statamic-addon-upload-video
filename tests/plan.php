@@ -63,4 +63,56 @@ check($normalized['audio'] === false, 'audio false is kept');
 check($normalized['size'] === 1080, '1080 is kept');
 check(Value::normalize(['id' => $id, 'extension' => 'jpg']) === null, 'images are rejected');
 
+check(Value::iniToBytes('20M') === 20 * 1024 * 1024, '20M is 20 mebibytes');
+check(Value::iniToBytes('0') === 0, 'unlimited ini is 0');
+$post = Value::iniToBytes((string) ini_get('post_max_size'));
+$chunk = Value::chunkBytes();
+check($chunk <= 1024 * 1024, 'a chunk is at most 1 MiB');
+check($post === 0 || $chunk < $post, 'a chunk stays under post_max_size');
+check(Value::videoSignatureOk("\x00\x00\x00\x18ftypisom", 'mp4'), 'mp4 signature');
+check(Value::videoSignatureOk("PK\x03\x04xxxxftyp", 'mp4') === false, 'ftyp must be the first box');
+check(Value::videoSignatureOk("\x1A\x45\xDF\xA3rest", 'webm'), 'webm signature');
+check(Value::videoSignatureOk('OggSxxxx', 'ogv'), 'ogg signature');
+
+if (! function_exists('storage_path')) {
+    function storage_path(string $path = ''): string
+    {
+        return sys_get_temp_dir().'/uv-chunk-test/storage/'.ltrim($path, '/');
+    }
+}
+
+if (! function_exists('public_path')) {
+    function public_path(string $path = ''): string
+    {
+        return sys_get_temp_dir().'/uv-chunk-test/public/'.ltrim($path, '/');
+    }
+}
+
+require __DIR__.'/../src/Encode/Processor.php';
+require __DIR__.'/../src/Chunks.php';
+
+use Vizuall\UploadVideo\Chunks;
+
+$movie = "\x00\x00\x00\x18ftypisom"."\x00\x00\x02\x00mdat";
+$parts = Chunks::directory($id);
+mkdir($parts, 0755, true);
+file_put_contents($parts.'/0', substr($movie, 0, 8));
+file_put_contents($parts.'/1', substr($movie, 8));
+Chunks::finish($id, 2, 'mp4');
+$joined = public_path('assets/upload-video/'.$id.'.mp4');
+check(is_file($joined) && file_get_contents($joined) === $movie, 'chunks join into one mp4');
+check(is_dir($parts) === false, 'part files are removed after join');
+
+$parts = Chunks::directory($id);
+mkdir($parts, 0755, true);
+file_put_contents($parts.'/0', "PK\x03\x04not-a-video");
+$rejected = false;
+try {
+    Chunks::finish($id, 1, 'mp4');
+} catch (RuntimeException) {
+    $rejected = true;
+}
+check($rejected, 'a joined file without a video signature is rejected');
+check(is_file($joined) === false, 'rejected upload leaves no video file');
+
 exit($failed === 0 ? 0 : 1);

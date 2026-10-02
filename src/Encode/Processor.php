@@ -2,6 +2,7 @@
 
 namespace Vizuall\UploadVideo\Encode;
 
+use Vizuall\UploadVideo\Chunks;
 use Vizuall\UploadVideo\Value;
 
 /**
@@ -57,6 +58,8 @@ final class Processor
                 }
             }
         }
+
+        Chunks::forget($id);
 
         $originals = storage_path('app/upload-video/originals');
 
