@@ -59,8 +59,30 @@
     color: #9ca3af;
 }
 
-.vzl-uv-select {
-    width: 100%;
+.vzl-uv-browse {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    padding: 0.35rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid #d1d5db;
+    background: #fff;
+    color: #111827;
+    cursor: pointer;
+}
+
+.dark .vzl-uv-browse {
+    border-color: #374151;
+    background: #1f2937;
+    color: #e5e7eb;
+}
+
+.vzl-uv-browse:disabled {
+    cursor: default;
+    opacity: 0.6;
 }
 
 .vzl-uv-audio {
@@ -113,16 +135,7 @@
     color: #b45309;
 }
 
-.vzl-uv-actions {
-    display: flex;
-    gap: 0.75rem;
-}
-
-.vzl-uv-pick,
 .vzl-uv-link {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
     font-size: 0.8125rem;
     color: #3b82f6;
     cursor: pointer;
@@ -131,9 +144,7 @@
     padding: 0;
 }
 
-.vzl-uv-file {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: pointer;
+.vzl-uv-link:disabled {
+    cursor: default;
+    opacity: 0.6;
 }

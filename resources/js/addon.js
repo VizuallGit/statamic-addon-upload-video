@@ -19,7 +19,10 @@
                 const error = ref('');
                 const knownDuration = ref(video.value.duration);
                 const mute = ref(video.value.audio === false);
+                const dragging = ref(false);
                 let player = null;
+                let fileInput = null;
+                let dragDepth = 0;
                 let lastEmitted = null;
 
                 watch(() => props.value, (next) => {
@@ -348,6 +351,86 @@
                     emitValue();
                 }
 
+                function setFileInput(element) {
+                    fileInput = element;
+                }
+
+                function openPicker() {
+                    if (busy.value || !fileInput) {
+                        return;
+                    }
+                    fileInput.click();
+                }
+
+                function onDragEnter(event) {
+                    event.preventDefault();
+                    if (busy.value) {
+                        return;
+                    }
+                    dragDepth += 1;
+                    dragging.value = true;
+                }
+
+                function onDragOver(event) {
+                    event.preventDefault();
+                }
+
+                function onDragLeave() {
+                    dragDepth = Math.max(0, dragDepth - 1);
+                    if (dragDepth === 0) {
+                        dragging.value = false;
+                    }
+                }
+
+                function onDrop(event) {
+                    event.preventDefault();
+                    dragDepth = 0;
+                    dragging.value = false;
+                    if (busy.value) {
+                        return;
+                    }
+                    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+                    if (file) {
+                        storeFile(file, mute.value);
+                    }
+                }
+
+                function part(name) {
+                    const resolved = window.Vue.resolveComponent(name);
+                    if (resolved && resolved !== name) {
+                        return resolved;
+                    }
+                    const current = window.Vue.getCurrentInstance();
+                    const registered = current && current.appContext && current.appContext.components
+                        ? current.appContext.components[name]
+                        : null;
+                    return registered || null;
+                }
+
+                function icon(name, className) {
+                    const Icon = part('ui-icon');
+                    if (Icon) {
+                        return h(Icon, { name, class: className });
+                    }
+                    return h('svg', {
+                        xmlns: 'http://www.w3.org/2000/svg',
+                        viewBox: '0 0 24 24',
+                        fill: 'none',
+                        stroke: 'currentColor',
+                        'stroke-width': '1.5',
+                        class: className,
+                        'aria-hidden': 'true',
+                    }, [
+                        h('path', {
+                            'stroke-linecap': 'round',
+                            'stroke-linejoin': 'round',
+                            d: name === 'folder-open'
+                                ? 'M3 7.5h6l1.5-2h9.5v11.5a1.5 1.5 0 0 1-1.5 1.5H4.5A1.5 1.5 0 0 1 3 16.5z'
+                                : 'M12 16V8m0 0 3 3m-3-3-3 3M4 16.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5',
+                        }),
+                    ]);
+                }
+
                 function choice(label, control) {
                     return h('label', { class: 'vzl-uv-field' }, [
                         h('span', { class: 'vzl-uv-label' }, label),
@@ -367,87 +450,146 @@
 
                 return () => {
                     const length = duration();
-                    const children = [];
-
-                    children.push(h('div', { class: 'vzl-uv-audio' }, [
-                        soundButton('Med lyd', false),
-                        soundButton('Uden lyd', true),
-                    ]));
-
-                    if (!video.value.id) {
-                        children.push(h('label', { class: 'vzl-uv-pick' }, [
-                            h('input', {
-                                type: 'file',
-                                accept: 'video/mp4,video/webm,video/quicktime,video/ogg,.mp4,.m4v,.webm,.mov,.ogv',
-                                class: 'vzl-uv-file',
-                                disabled: busy.value,
-                                onChange: upload,
-                            }),
-                            busy.value ? (status.value || 'Uploader…') : 'Vælg video',
-                        ]));
-                    } else {
-                        children.push(h('video', {
-                            key: video.value.id,
-                            ref: setPlayer,
-                            class: 'vzl-uv-player',
-                            src: previewSrc(),
-                            controls: true,
-                            playsinline: true,
-                            preload: 'metadata',
-                            onLoadedmetadata: onMetadata,
-                        }));
-
-                        children.push(h('p', { class: 'vzl-uv-name' }, video.value.filename));
-
-                        children.push(choice('Poster ved', h('div', { class: 'vzl-uv-poster' }, [
-                            h('input', {
-                                type: 'range',
-                                min: '0',
-                                max: String(length && length > 0 ? length : 60),
-                                step: '0.1',
-                                value: video.value.poster_at,
-                                disabled: !length,
-                                onInput: (event) => setPoster(event.target.value),
-                            }),
-                            h('input', {
-                                type: 'number',
-                                class: 'input-text vzl-uv-seconds',
-                                min: '0',
-                                max: length && length > 0 ? String(length) : null,
-                                step: '0.1',
-                                value: video.value.poster_at,
-                                onInput: (event) => setPoster(event.target.value),
-                                onFocus: () => emit('focus'),
-                                onBlur: () => emit('blur'),
-                            }),
-                            h('span', { class: 'vzl-uv-unit' }, length ? 'sek af ' + length.toFixed(1).replace('.', ',') : 'sek'),
-                        ])));
-
-                        children.push(h('p', { class: 'vzl-uv-note' }, 'Poster-billedet gemmes fra det sekund, du vælger.'));
-
-                        children.push(h('div', { class: 'vzl-uv-actions' }, [
-                            h('label', { class: 'vzl-uv-link' }, [
-                                h('input', {
-                                    type: 'file',
-                                    accept: 'video/mp4,video/webm,video/quicktime,video/ogg,.mp4,.m4v,.webm,.mov,.ogv',
-                                    class: 'vzl-uv-file',
-                                    disabled: busy.value,
-                                    onChange: upload,
-                                }),
-                                busy.value ? (status.value || 'Uploader…') : 'Skift video',
+                    const Button = part('Button');
+                    const hasFile = !!video.value.id;
+                    const pickerClass = 'not-[.link-fieldtype_&]:p-2 not-[.link-fieldtype_&]:border border-gray-300 dark:border-gray-700 dark:bg-gray-850 rounded-xl flex flex-col @[22rem]:flex-row gap-2 sm:gap-3 gap-y-3'
+                        + (hasFile ? ' rounded-b-none' : '');
+                    const choose = Button
+                        ? h(Button, {
+                            type: 'button',
+                            icon: 'folder-open',
+                            text: 'Vælg video',
+                            class: 'w-full @2xs:w-auto',
+                            disabled: busy.value,
+                            onClick: openPicker,
+                        })
+                        : h('button', {
+                            type: 'button',
+                            class: 'vzl-uv-browse',
+                            disabled: busy.value,
+                            onClick: openPicker,
+                        }, [
+                            icon('folder-open', 'size-5'),
+                            'Vælg video',
+                        ]);
+                    const remove = Button
+                        ? h(Button, {
+                            type: 'button',
+                            variant: 'ghost',
+                            size: 'sm',
+                            icon: 'trash',
+                            text: 'Fjern',
+                            disabled: busy.value,
+                            onClick: clear,
+                        })
+                        : h('button', {
+                            type: 'button',
+                            class: 'vzl-uv-link',
+                            disabled: busy.value,
+                            onClick: clear,
+                        }, 'Fjern');
+                    const hint = busy.value
+                        ? [h('span', { class: 'leading-tight' }, status.value || 'Uploader…')]
+                        : [
+                            h('span', { class: 'leading-tight' }, 'Træk hertil eller '),
+                            h('button', {
+                                type: 'button',
+                                class: 'text-left underline underline-offset-2 cursor-pointer hover:text-gray-925 dark:hover:text-gray-200',
+                                onClick: openPicker,
+                            }, 'vælg en fil'),
+                            h('span', '. '),
+                            h('span', { class: 'leading-tight whitespace-nowrap' }, (hasFile ? '1' : '0') + '/1 valgt'),
+                        ];
+                    const shell = [
+                        h('input', {
+                            type: 'file',
+                            accept: 'video/mp4,video/webm,video/quicktime,video/ogg,.mp4,.m4v,.webm,.mov,.ogv',
+                            class: 'sr-only',
+                            ref: setFileInput,
+                            disabled: busy.value,
+                            onChange: upload,
+                        }),
+                        dragging.value ? h('div', {
+                            class: 'absolute inset-0 z-(--z-index-above) flex gap-2 items-center justify-center bg-white/80 border border-gray-400 border-dashed rounded-lg text-gray-700 pointer-events-none',
+                        }, [
+                            icon('upload-cloud', 'size-5'),
+                            h('span', { class: 'text-sm' }, 'Slip for at uploade'),
+                        ]) : null,
+                        h('div', { class: pickerClass, 'data-asset-picker': '' }, [
+                            choose,
+                            h('div', { class: 'text-sm text-gray-600 dark:text-gray-400 flex items-center flex-1 gap-1 ms-1' }, [
+                                icon('upload-cloud', 'size-5 text-gray-500 me-2'),
+                                h('div', { class: 'text-xs' }, hint),
                             ]),
-                            h('button', { type: 'button', class: 'vzl-uv-link', onClick: clear }, 'Fjern'),
+                        ]),
+                    ];
+
+                    if (hasFile) {
+                        shell.push(h('div', {
+                            class: 'bg-white dark:bg-gray-850 relative border border-gray-300 dark:border-gray-700 border-t-0 rounded-xl rounded-t-none p-3 flex flex-col gap-3',
+                        }, [
+                            h('video', {
+                                key: video.value.id,
+                                ref: setPlayer,
+                                class: 'vzl-uv-player',
+                                src: previewSrc(),
+                                controls: true,
+                                playsinline: true,
+                                preload: 'metadata',
+                                onLoadedmetadata: onMetadata,
+                            }),
+                            h('div', { class: 'flex items-center justify-between gap-2' }, [
+                                h('p', { class: 'vzl-uv-name' }, video.value.filename),
+                                remove,
+                            ]),
+                            h('div', { class: 'vzl-uv-audio' }, [
+                                soundButton('Med lyd', false),
+                                soundButton('Uden lyd', true),
+                            ]),
+                            choice('Poster ved', h('div', { class: 'vzl-uv-poster' }, [
+                                h('input', {
+                                    type: 'range',
+                                    min: '0',
+                                    max: String(length && length > 0 ? length : 60),
+                                    step: '0.1',
+                                    value: video.value.poster_at,
+                                    disabled: !length,
+                                    onInput: (event) => setPoster(event.target.value),
+                                }),
+                                h('input', {
+                                    type: 'number',
+                                    class: 'input-text vzl-uv-seconds',
+                                    min: '0',
+                                    max: length && length > 0 ? String(length) : null,
+                                    step: '0.1',
+                                    value: video.value.poster_at,
+                                    onInput: (event) => setPoster(event.target.value),
+                                    onFocus: () => emit('focus'),
+                                    onBlur: () => emit('blur'),
+                                }),
+                                h('span', { class: 'vzl-uv-unit' }, length ? 'sek af ' + length.toFixed(1).replace('.', ',') : 'sek'),
+                            ])),
+                            h('p', { class: 'vzl-uv-note' }, 'Poster-billedet gemmes fra det sekund, du vælger.'),
                         ]));
                     }
 
                     const maxMb = Math.max(1, Math.round((Number(props.meta.maxBytes) || (60 * 1024 * 1024)) / (1024 * 1024)));
-                    children.push(h('p', { class: 'vzl-uv-note' }, 'Højst ' + maxMb + ' MB. Videoen gemmes i højst 720p og lav kvalitet.'));
 
-                    if (error.value) {
-                        children.push(h('p', { class: 'vzl-uv-warn' }, error.value));
-                    }
-
-                    return h('div', { class: 'vzl-uv' }, children);
+                    return h('div', { class: 'vzl-uv' }, [
+                        h('div', {
+                            class: '@container relative w-full',
+                            onDragenter: onDragEnter,
+                            onDragover: onDragOver,
+                            onDragleave: onDragLeave,
+                            onDrop: onDrop,
+                        }, shell),
+                        hasFile ? null : h('div', { class: 'vzl-uv-audio' }, [
+                            soundButton('Med lyd', false),
+                            soundButton('Uden lyd', true),
+                        ]),
+                        h('p', { class: 'vzl-uv-note' }, 'Højst ' + maxMb + ' MB. Videoen gemmes i højst 720p og lav kvalitet.'),
+                        error.value ? h('p', { class: 'vzl-uv-warn' }, error.value) : null,
+                    ]);
                 };
             },
         });
