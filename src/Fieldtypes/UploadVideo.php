@@ -186,7 +186,7 @@ class UploadVideo extends Fieldtype
             'posterUrl' => cp_route('upload-video.poster', ['id' => '__ID__']),
             'posterAssetUrl' => cp_route('upload-video.poster-asset'),
             'deleteUrl' => cp_route('upload-video.destroy', ['id' => '__ID__']),
-            'assetsUrl' => cp_url('assets-fieldtype'),
+            'assetsUrl' => url(config('statamic.cp.route').'/assets-fieldtype'),
             'allowUploads' => $this->allowsUploads(),
             'folder' => $folder === '' ? '/' : $folder,
             'dynamicPending' => $pending,
