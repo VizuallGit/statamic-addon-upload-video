@@ -3,7 +3,6 @@
 namespace Vizuall\UploadVideo\Fieldtypes;
 
 use Statamic\Fields\Fieldtype;
-use Vizuall\UploadVideo\Encode\Ffmpeg;
 use Vizuall\UploadVideo\Encode\Processor;
 use Vizuall\UploadVideo\Value;
 
@@ -30,9 +29,8 @@ class UploadVideo extends Fieldtype
     {
         return [
             'uploadUrl' => cp_route('upload-video.store'),
+            'posterUrl' => cp_route('upload-video.poster', ['id' => '__ID__']),
             'deleteUrl' => cp_route('upload-video.destroy', ['id' => '__ID__']),
-            'previewUrl' => cp_route('upload-video.preview', ['id' => '__ID__']),
-            'ffmpeg' => Ffmpeg::binary() !== null,
         ];
     }
 
@@ -48,13 +46,7 @@ class UploadVideo extends Fieldtype
 
     public function process($value)
     {
-        $value = Value::normalize($value);
-
-        if ($value !== null && ! app()->runningInConsole() && ! $this->isLivePreview()) {
-            app(Processor::class)->queue($value);
-        }
-
-        return $value;
+        return Value::normalize($value);
     }
 
     public function augment($value)
@@ -65,26 +57,6 @@ class UploadVideo extends Fieldtype
             return null;
         }
 
-        return app(Processor::class)->describe($value, $this->shouldEncodeNow());
-    }
-
-    private function shouldEncodeNow(): bool
-    {
-        if ($this->isLivePreview()) {
-            return false;
-        }
-
-        if (app()->runningInConsole()) {
-            return true;
-        }
-
-        $prefix = trim((string) config('statamic.cp.route'), '/');
-
-        return $prefix === '' || ! request()->is($prefix, $prefix.'/*');
-    }
-
-    private function isLivePreview(): bool
-    {
-        return request()->hasMacro('isLivePreview') && request()->isLivePreview();
+        return app(Processor::class)->describe($value);
     }
 }

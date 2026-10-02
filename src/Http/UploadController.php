@@ -5,7 +5,6 @@ namespace Vizuall\UploadVideo\Http;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Symfony\Component\HttpFoundation\StreamedResponse;
-use Vizuall\UploadVideo\Encode\Ffmpeg;
 use Vizuall\UploadVideo\Encode\Processor;
 use Vizuall\UploadVideo\Value;
 
@@ -27,7 +26,7 @@ class UploadController extends Controller
         }
 
         $id = (string) \Illuminate\Support\Str::uuid();
-        $directory = storage_path('app/upload-video/originals');
+        $directory = Processor::publicDir();
 
         if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
             return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 500);
@@ -35,19 +34,36 @@ class UploadController extends Controller
 
         $file->move($directory, $id.'.'.$extension);
 
-        $path = $directory.'/'.$id.'.'.$extension;
-        $duration = Ffmpeg::duration($path);
-
         return [
             'id' => $id,
             'filename' => Value::filename($file->getClientOriginalName()),
             'extension' => $extension,
-            'duration' => $duration,
-            'poster_at' => Value::clampPoster(1, $duration),
-            'size' => 720,
-            'quality' => 'standard',
-            'audio' => true,
+            'poster_at' => 1,
         ];
+    }
+
+    public function poster(string $id, Request $request)
+    {
+        if (! Value::idOk($id)) {
+            return response()->json(['message' => 'Ukendt video.'], 404);
+        }
+
+        $file = $request->file('poster');
+        $mime = $file ? (string) $file->getMimeType() : '';
+
+        if ($file === null || ! $file->isValid() || ! in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            return response()->json(['message' => 'Poster skal være et billede.'], 422);
+        }
+
+        $directory = Processor::publicDir();
+
+        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
+            return response()->json(['message' => 'Poster kunne ikke gemmes.'], 500);
+        }
+
+        $file->move($directory, $id.'.jpg');
+
+        return ['poster' => '/assets/upload-video/'.$id.'.jpg'];
     }
 
     public function destroy(string $id, Processor $processor)

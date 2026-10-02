@@ -94,28 +94,74 @@
                 }
 
                 function previewSrc() {
-                    if (!video.value.id || !props.meta.previewUrl) {
+                    if (!video.value.id || !video.value.extension) {
                         return '';
                     }
-                    return props.meta.previewUrl.replace('__ID__', video.value.id);
+                    return '/assets/upload-video/' + video.value.id + '.' + video.value.extension;
                 }
+
+                let posterTimer = null;
 
                 function seek() {
                     if (!player) {
                         return;
                     }
                     const at = clamp(video.value.poster_at, duration());
-                    const apply = () => {
+                    const show = () => {
                         player.pause();
+                        const capture = () => schedulePoster();
+                        if (Math.abs((player.currentTime || 0) - at) < 0.08 && player.readyState >= 2) {
+                            capture();
+                            return;
+                        }
+                        player.addEventListener('seeked', capture, { once: true });
                         try {
                             player.currentTime = at;
-                        } catch (e) {}
+                        } catch (e) {
+                            capture();
+                        }
                     };
                     if (player.readyState >= 1) {
-                        apply();
+                        show();
                     } else {
-                        player.addEventListener('loadedmetadata', apply, { once: true });
+                        player.addEventListener('loadedmetadata', show, { once: true });
                     }
+                }
+
+                function schedulePoster() {
+                    clearTimeout(posterTimer);
+                    posterTimer = setTimeout(sendPoster, 400);
+                }
+
+                function sendPoster() {
+                    if (!player || !video.value.id || !player.videoWidth || !props.meta.posterUrl) {
+                        return;
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = player.videoWidth;
+                    canvas.height = player.videoHeight;
+                    const context = canvas.getContext('2d');
+                    if (!context) {
+                        return;
+                    }
+                    context.drawImage(player, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob((blob) => {
+                        if (!blob || !video.value.id) {
+                            return;
+                        }
+                        const body = new FormData();
+                        body.append('poster', blob, 'poster.jpg');
+                        fetch(props.meta.posterUrl.replace('__ID__', video.value.id), {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                'X-CSRF-TOKEN': Statamic.$config.get('csrfToken'),
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json',
+                            },
+                            body,
+                        });
+                    }, 'image/jpeg', 0.85);
                 }
 
                 function onMetadata() {
@@ -220,25 +266,9 @@
                     ]);
                 }
 
-                function select(current, options, onChange) {
-                    return h('select', {
-                        class: 'input-text vzl-uv-select',
-                        onChange: (event) => onChange(event.target.value),
-                        onFocus: () => emit('focus'),
-                        onBlur: () => emit('blur'),
-                    }, options.map(([value, label]) => h('option', {
-                        value: String(value),
-                        selected: String(value) === String(current),
-                    }, label)));
-                }
-
                 return () => {
                     const length = duration();
                     const children = [];
-
-                    if (props.meta.ffmpeg === false) {
-                        children.push(h('p', { class: 'vzl-uv-warn' }, 'ffmpeg blev ikke fundet på serveren. Forhåndsvisningen virker, men poster og den mindre fil bliver ikke lavet.'));
-                    }
 
                     if (!video.value.id) {
                         children.push(h('label', { class: 'vzl-uv-pick' }, [
@@ -289,38 +319,7 @@
                             h('span', { class: 'vzl-uv-unit' }, length ? 'sek af ' + length.toFixed(1).replace('.', ',') : 'sek'),
                         ])));
 
-                        children.push(choice('Størrelse', select(video.value.size, [
-                            ['original', 'Original'],
-                            ['480', '480p'],
-                            ['720', '720p'],
-                            ['1080', '1080p'],
-                        ], (value) => {
-                            video.value.size = value === 'original' ? 'original' : Number(value);
-                            emitValue();
-                        })));
-
-                        children.push(choice('Kvalitet', select(video.value.quality, [
-                            ['high', 'Høj'],
-                            ['standard', 'Almindelig'],
-                            ['lower', 'Lav'],
-                        ], (value) => {
-                            video.value.quality = value;
-                            emitValue();
-                        })));
-
-                        children.push(choice('Lyd', h('div', { class: 'vzl-uv-audio' }, [
-                            ['Til', true],
-                            ['Fra', false],
-                        ].map(([label, on]) => h('button', {
-                            type: 'button',
-                            class: ['vzl-uv-audio-btn', video.value.audio === on ? 'is-active' : ''],
-                            onClick: () => {
-                                video.value.audio = on;
-                                emitValue();
-                            },
-                        }, label)))));
-
-                        children.push(h('p', { class: 'vzl-uv-note' }, 'Billedet ovenfor er rammen fra det sekund. Den fil siden bruger, laves når siden gemmes.'));
+                        children.push(h('p', { class: 'vzl-uv-note' }, 'Poster-billedet gemmes fra det sekund, du vælger.'));
 
                         children.push(h('div', { class: 'vzl-uv-actions' }, [
                             h('label', { class: 'vzl-uv-link' }, [
