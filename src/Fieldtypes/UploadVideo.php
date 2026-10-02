@@ -3,6 +3,7 @@
 namespace Vizuall\UploadVideo\Fieldtypes;
 
 use Statamic\Fields\Fieldtype;
+use Vizuall\UploadVideo\Chunks;
 use Vizuall\UploadVideo\Encode\Processor;
 use Vizuall\UploadVideo\Value;
 
@@ -30,6 +31,7 @@ class UploadVideo extends Fieldtype
         return [
             'uploadUrl' => cp_route('upload-video.store'),
             'chunkBytes' => Value::chunkBytes(),
+            'maxBytes' => Chunks::MAX_BYTES,
             'posterUrl' => cp_route('upload-video.poster', ['id' => '__ID__']),
             'deleteUrl' => cp_route('upload-video.destroy', ['id' => '__ID__']),
         ];

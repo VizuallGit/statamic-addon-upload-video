@@ -93,6 +93,9 @@ require __DIR__.'/../src/Chunks.php';
 
 use Vizuall\UploadVideo\Chunks;
 
+check(Chunks::MAX_BYTES === 60 * 1024 * 1024, 'a video cannot exceed 60 MB');
+check(Chunks::tooBigMessage() === 'Videoen må højst være 60 MB.', 'the limit is told in megabytes');
+
 $movie = "\x00\x00\x00\x18ftypisom"."\x00\x00\x02\x00mdat";
 $parts = Chunks::directory($id);
 mkdir($parts, 0755, true);

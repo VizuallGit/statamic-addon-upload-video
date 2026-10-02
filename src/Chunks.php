@@ -8,11 +8,18 @@ use Vizuall\UploadVideo\Encode\Processor;
 
 /**
  * A video is stored from several small requests, then joined into one file.
- * The size of each request follows PHP's own upload limit.
+ * Each request stays under PHP's upload limit. The finished file cannot pass the max.
  */
 final class Chunks
 {
-    public const MAX_BYTES = 512 * 1024 * 1024;
+    public const MAX_BYTES = 60 * 1024 * 1024;
+
+    public static function tooBigMessage(): string
+    {
+        $mb = (int) round(self::MAX_BYTES / (1024 * 1024));
+
+        return 'Videoen må højst være '.$mb.' MB.';
+    }
 
     public static function directory(string $id): string
     {
@@ -53,7 +60,7 @@ final class Chunks
 
         if ($bytes < 1 || $bytes > self::MAX_BYTES) {
             self::forget($id);
-            throw new RuntimeException($bytes < 1 ? 'Vælg en videofil.' : 'Videoen er for stor.');
+            throw new RuntimeException($bytes < 1 ? 'Vælg en videofil.' : self::tooBigMessage());
         }
 
         $public = Processor::publicDir();

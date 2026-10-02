@@ -201,6 +201,13 @@
                     const previous = video.value.id;
 
                     try {
+                        const maxBytes = Number(props.meta.maxBytes) || (60 * 1024 * 1024);
+                        const maxMb = Math.max(1, Math.round(maxBytes / (1024 * 1024)));
+                        const tooBig = 'Videoen må højst være ' + maxMb + ' MB.';
+                        if (file.size > maxBytes) {
+                            throw new Error(tooBig);
+                        }
+
                         if (!window.VzlUploadVideoShrink || typeof window.VzlUploadVideoShrink.shrink !== 'function') {
                             throw new Error('Videoen kunne ikke gøres mindre.');
                         }
@@ -208,6 +215,9 @@
                         const smaller = await window.VzlUploadVideoShrink.shrink(file, (progress) => {
                             status.value = 'Gør videoen mindre… ' + Math.round((Number(progress) || 0) * 100) + ' %';
                         });
+                        if (smaller.size > maxBytes) {
+                            throw new Error(tooBig);
+                        }
                         const chunkBytes = Math.max(1, Number(props.meta.chunkBytes) || (1024 * 1024));
                         const total = Math.max(1, Math.ceil(smaller.size / chunkBytes));
                         let id = '';
@@ -369,7 +379,8 @@
                         ]));
                     }
 
-                    children.push(h('p', { class: 'vzl-uv-note' }, 'Videoen gemmes i højst 720p og lav kvalitet.'));
+                    const maxMb = Math.max(1, Math.round((Number(props.meta.maxBytes) || (60 * 1024 * 1024)) / (1024 * 1024)));
+                    children.push(h('p', { class: 'vzl-uv-note' }, 'Højst ' + maxMb + ' MB. Videoen gemmes i højst 720p og lav kvalitet.'));
 
                     if (error.value) {
                         children.push(h('p', { class: 'vzl-uv-warn' }, error.value));
