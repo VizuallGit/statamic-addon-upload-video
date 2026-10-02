@@ -52,15 +52,14 @@ class UploadVideo extends Fieldtype
                     ],
                     'quality' => [
                         'display' => 'Kvalitet',
-                        'instructions' => 'Lavere kvalitet giver en mindre fil. 10 % passer til en baggrundsvideo.',
-                        'type' => 'select',
-                        'default' => '50',
-                        'options' => [
-                            '10' => '10 %',
-                            '50' => '50 %',
-                            '70' => '70 %',
-                        ],
-                        'width' => 50,
+                        'instructions' => 'Fra 10 % til 100 %, i spring på 10. Lavere kvalitet giver en mindre fil. 10 % passer til en baggrundsvideo.',
+                        'type' => 'range',
+                        'min' => 10,
+                        'max' => 100,
+                        'step' => 10,
+                        'default' => Value::DEFAULT_QUALITY,
+                        'append' => '%',
+                        'width' => 100,
                     ],
                     'mute' => [
                         'display' => 'Uden lyd',

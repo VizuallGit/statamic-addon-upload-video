@@ -10,11 +10,7 @@ final class Value
 
     public const DEFAULT_MB = 30;
 
-    public const QUALITY = [
-        '10' => 0.1,
-        '50' => 0.5,
-        '70' => 0.7,
-    ];
+    public const DEFAULT_QUALITY = 70;
 
     public static function idOk(string $id): bool
     {
@@ -130,7 +126,7 @@ final class Value
             $size = 720;
         }
 
-        $quality = self::QUALITY[(string) ($config['quality'] ?? '50')] ?? self::QUALITY['50'];
+        $quality = self::quality($config['quality'] ?? self::DEFAULT_QUALITY);
 
         return [
             'maxMb' => $mb,
@@ -139,6 +135,24 @@ final class Value
             'quality' => $quality,
             'audio' => ! self::audio($config['mute'] ?? false),
         ];
+    }
+
+    /**
+     * Percent from the range field, snapped to tens between 10 and 100.
+     * Mediabunny takes 0 to 1, where 1 is the highest quality.
+     */
+    public static function quality(mixed $value): float
+    {
+        $percent = (int) $value;
+
+        if ($percent < 10 || $percent > 100) {
+            $percent = self::DEFAULT_QUALITY;
+        }
+
+        $percent = (int) (round($percent / 10) * 10);
+        $percent = min(100, max(10, $percent));
+
+        return $percent / 100;
     }
 
     public static function maxToken(int $bytes, string $key): string
