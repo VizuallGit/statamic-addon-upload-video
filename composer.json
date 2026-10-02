@@ -1,0 +1,29 @@
+{
+    "name": "statamic-addon/upload-video",
+    "description": "Vizuall Upload Video fieldtype",
+    "type": "statamic-addon",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2",
+        "statamic/cms": "^6.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Vizuall\\UploadVideo\\": "src/"
+        }
+    },
+    "extra": {
+        "statamic": {
+            "name": "Vizuall Upload Video",
+            "description": "Upload a video, pick a poster frame, and publish a smaller file",
+            "provider": "Vizuall\\UploadVideo\\AddonServiceProvider"
+        },
+        "laravel": {
+            "providers": [
+                "Vizuall\\UploadVideo\\AddonServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
