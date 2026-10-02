@@ -496,14 +496,6 @@
                     }
                 }
 
-                function onPicks(ids) {
-                    const list = Array.isArray(ids) ? ids.slice(0, maxFiles()) : [];
-                    picks.value = list;
-                    if (maxFiles() === 1 && list.length === 1) {
-                        commitPicks();
-                    }
-                }
-
                 function onDragEnter(event) {
                     if (!allowsUploads()) {
                         return;
@@ -557,6 +549,20 @@
                     return registered || null;
                 }
 
+                function assetsPieces() {
+                    const field = part('assets-fieldtype');
+                    if (!field) {
+                        return {};
+                    }
+                    if (field.components) {
+                        return field.components;
+                    }
+                    if (field.__vccOpts && field.__vccOpts.components) {
+                        return field.__vccOpts.components;
+                    }
+                    return {};
+                }
+
                 function icon(name, className) {
                     const Icon = part('ui-icon');
                     if (Icon) {
@@ -582,20 +588,21 @@
                 }
 
                 return () => {
-                    const Button = part('ui-button');
-                    const Stack = part('ui-stack');
-                    const Browser = part('asset-browser');
+                    const pieces = assetsPieces();
+                    const Button = pieces.Button || part('ui-button');
+                    const Stack = pieces.Stack || part('ui-stack');
+                    const Selector = pieces.Selector || null;
                     const item = current();
                     const length = duration();
                     const hasFile = videos.value.length > 0;
                     const pending = props.meta.dynamicPending === true;
-                    const pickerClass = 'not-[.link-fieldtype_&]:p-2 not-[.link-fieldtype_&]:border border-gray-300 dark:border-gray-700 dark:bg-gray-850 rounded-xl flex flex-col @[22rem]:flex-row gap-2 sm:gap-3 gap-y-3'
+                    const pickerClass = 'not-[.link-fieldtype_&]:p-2 not-[.link-fieldtype_&]:border border-gray-300 dark:border-gray-700 dark:bg-gray-850 rounded-xl flex flex-row flex-wrap items-center gap-2 sm:gap-3 gap-y-3'
                         + (hasFile ? ' rounded-b-none' : '');
                     const browse = Button
                         ? h(Button, {
                             icon: 'folder-open',
                             text: 'Browse video',
-                            class: 'w-full @2xs:w-auto',
+                            class: 'shrink-0',
                             disabled: busy.value || pending,
                             onClick: openBrowser,
                         })
@@ -656,7 +663,7 @@
                             ]) : null,
                             h('div', { class: pickerClass, 'data-asset-picker': '' }, [
                                 browse,
-                                h('div', { class: 'text-sm text-gray-600 dark:text-gray-400 flex items-center flex-1 gap-1 ms-1' }, [
+                                h('div', { class: 'text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1 ms-1' }, [
                                     allowsUploads() ? icon('upload-cloud', 'size-5 text-gray-500 me-2') : null,
                                     h('div', { class: 'text-xs' }, hint),
                                 ]),
@@ -707,7 +714,7 @@
                         ]));
                     }
 
-                    const browser = showBrowser.value && Stack && Browser && props.meta.container
+                    const browser = showBrowser.value && Stack && Selector && props.meta.container
                         ? h(Stack, {
                             open: true,
                             inset: '',
@@ -718,24 +725,18 @@
                                 }
                             },
                         }, {
-                            default: () => h('div', { class: 'flex h-full min-h-0 flex-col' }, [
-                                h(Browser, {
-                                    class: 'flex-1 min-h-0',
-                                    container: props.meta.container,
-                                    selectedPath: props.meta.folder || '/',
-                                    selectedAssets: picks.value,
-                                    restrictFolderNavigation: props.meta.restrict === true,
-                                    maxFiles: maxFiles(),
-                                    onSelectionsUpdated: onPicks,
-                                }),
-                                h('div', { class: 'flex items-center justify-between border-t bg-gray-100 dark:bg-gray-850 dark:border-gray-700 px-4 py-2' }, [
-                                    h('span', { class: 'text-sm text-gray-700 dark:text-gray-200' }, picks.value.length + '/' + maxFiles()),
-                                    h('div', { class: 'flex items-center gap-2' }, [
-                                        Button ? h(Button, { variant: 'ghost', text: 'Annuller', onClick: closeBrowser }) : h('button', { type: 'button', onClick: closeBrowser }, 'Annuller'),
-                                        Button ? h(Button, { variant: 'primary', text: 'Vælg', disabled: busy.value, onClick: commitPicks }) : h('button', { type: 'button', onClick: commitPicks }, 'Vælg'),
-                                    ]),
-                                ]),
-                            ]),
+                            default: () => h(Selector, {
+                                container: props.meta.container,
+                                folder: props.meta.folder || '/',
+                                restrictFolderNavigation: props.meta.restrict === true,
+                                selected: picks.value,
+                                maxFiles: maxFiles(),
+                                onSelected: (ids) => {
+                                    picks.value = Array.isArray(ids) ? ids.slice(0, maxFiles()) : [];
+                                    commitPicks();
+                                },
+                                onClosed: closeBrowser,
+                            }),
                         })
                         : null;
 

@@ -3,6 +3,7 @@
 namespace Vizuall\UploadVideo\Fieldtypes;
 
 use Illuminate\Support\Collection;
+use Statamic\Contracts\Assets\Asset as AssetContract;
 use Statamic\Contracts\Assets\AssetFolder as AssetFolderContract;
 use Statamic\Contracts\Entries\Entry;
 use Statamic\Facades\Asset;
@@ -199,7 +200,7 @@ class UploadVideo extends Fieldtype
                 'delete_url' => $container->deleteUrl(),
                 'blueprint_url' => cp_route('blueprints.asset-containers.edit', $container->handle()),
                 'can_view' => $user !== null && $user->can('view', $container),
-                'can_upload' => false,
+                'can_upload' => $user !== null && $user->can('store', [AssetContract::class, $container]),
                 'can_edit' => $user !== null && $user->can('edit', $container),
                 'can_delete' => false,
                 'can_create_folders' => $user !== null && $user->can('create', [AssetFolderContract::class, $container]),
