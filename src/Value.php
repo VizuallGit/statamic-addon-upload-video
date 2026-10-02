@@ -43,10 +43,22 @@ final class Value
             return null;
         }
 
+        $asset = (string) ($value['asset'] ?? '');
         $id = (string) ($value['id'] ?? '');
+        $hasAsset = self::assetOk($asset);
+        $hasId = self::idOk($id);
+
+        if (! $hasAsset && ! $hasId) {
+            return null;
+        }
+
         $extension = strtolower((string) ($value['extension'] ?? ''));
 
-        if (! self::idOk($id) || ! in_array($extension, self::EXTENSIONS, true)) {
+        if ($extension === '' && $hasAsset) {
+            $extension = strtolower(pathinfo($asset, PATHINFO_EXTENSION));
+        }
+
+        if (! in_array($extension, self::EXTENSIONS, true)) {
             return null;
         }
 
@@ -54,16 +66,115 @@ final class Value
             ? (float) $value['duration']
             : null;
 
+        $filename = (string) ($value['filename'] ?? '');
+
+        if ($filename === '' && $hasAsset) {
+            $filename = basename(substr($asset, strpos($asset, '::') + 2));
+        }
+
         return [
-            'id' => $id,
-            'filename' => self::filename((string) ($value['filename'] ?? ('video.'.$extension))),
+            'id' => $hasId ? $id : null,
+            'asset' => $hasAsset ? $asset : null,
+            'filename' => self::filename($filename !== '' ? $filename : ('video.'.$extension)),
             'extension' => $extension,
+            'url' => self::safeUrl($value['url'] ?? null),
+            'filesize' => self::filesizeLabel($value['filesize'] ?? null),
             'poster_at' => self::clampPoster((float) ($value['poster_at'] ?? 1), $duration),
             'size' => Plan::normalizeSize($value['size'] ?? 720),
             'quality' => Plan::normalizeQuality($value['quality'] ?? 'standard'),
             'audio' => self::audio($value['audio'] ?? true),
             'duration' => $duration,
         ];
+    }
+
+    /**
+     * One saved video, or a list of them when the field allows more than one.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function items(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $rows = array_is_list($value) ? $value : [$value];
+        $items = [];
+
+        foreach ($rows as $row) {
+            $item = self::normalize($row);
+
+            if ($item !== null) {
+                $items[] = $item;
+            }
+        }
+
+        return $items;
+    }
+
+    public static function assetOk(string $id): bool
+    {
+        if (! preg_match('/^[A-Za-z0-9_-]+::(.+)$/', $id, $matches)) {
+            return false;
+        }
+
+        $path = $matches[1];
+
+        if ($path === '' || str_contains($path, '..') || str_starts_with($path, '/')) {
+            return false;
+        }
+
+        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), self::EXTENSIONS, true);
+    }
+
+    public static function folder(mixed $folder): string
+    {
+        if (is_array($folder)) {
+            $folder = $folder[0] ?? '';
+        }
+
+        $folder = trim(str_replace('\\', '/', (string) $folder), '/');
+
+        if ($folder === '' || str_contains($folder, '..')) {
+            return '';
+        }
+
+        return $folder;
+    }
+
+    public static function containerHandle(mixed $handle): ?string
+    {
+        $handle = is_string($handle) ? $handle : '';
+
+        return preg_match('/^[A-Za-z0-9_-]+$/', $handle) ? $handle : null;
+    }
+
+    private static function safeUrl(mixed $value): ?string
+    {
+        if (! is_string($value) || ! str_starts_with($value, '/') || str_contains($value, '..')) {
+            return null;
+        }
+
+        if (preg_match('/[\s<>"\']/', $value)) {
+            return null;
+        }
+
+        return mb_substr($value, 0, 500);
+    }
+
+    private static function filesizeLabel(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        if ($value === '' || strlen($value) > 20 || ! preg_match('/^[0-9.,]+\s*[KMGT]?B$/i', $value)) {
+            return null;
+        }
+
+        return $value;
     }
 
     public static function audio(mixed $audio): bool

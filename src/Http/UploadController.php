@@ -9,6 +9,7 @@ use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Vizuall\UploadVideo\Chunks;
 use Vizuall\UploadVideo\Encode\Processor;
+use Vizuall\UploadVideo\Library;
 use Vizuall\UploadVideo\Value;
 
 class UploadController extends Controller
@@ -71,6 +72,14 @@ class UploadController extends Controller
             }
 
             Chunks::finish($id, $total, $extension, $maxBytes);
+
+            $container = Value::containerHandle($request->input('container'));
+
+            if ($container !== null) {
+                $placed = Library::place($id, $extension, $filename, $container, Value::folder($request->input('folder')));
+
+                return $placed + ['poster_at' => 1];
+            }
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 500);
         }
@@ -81,6 +90,28 @@ class UploadController extends Controller
             'extension' => $extension,
             'poster_at' => 1,
         ];
+    }
+
+    public function posterAsset(Request $request)
+    {
+        $file = $request->file('poster');
+        $mime = $file ? (string) $file->getMimeType() : '';
+
+        if ($file === null || ! $file->isValid() || ! in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            return response()->json(['message' => 'Poster skal være et billede.'], 422);
+        }
+
+        $contents = file_get_contents($file->getRealPath());
+
+        if ($contents === false) {
+            return response()->json(['message' => 'Poster kunne ikke gemmes.'], 500);
+        }
+
+        try {
+            return ['poster' => Library::poster((string) $request->input('asset', ''), $contents)];
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 404);
+        }
     }
 
     public function poster(string $id, Request $request)

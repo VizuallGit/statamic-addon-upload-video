@@ -62,6 +62,14 @@ check($normalized['poster_at'] === 7.95, 'stored poster is clamped to the video'
 check($normalized['audio'] === false, 'audio false is kept');
 check($normalized['size'] === 1080, '1080 is kept');
 check(Value::normalize(['id' => $id, 'extension' => 'jpg']) === null, 'images are rejected');
+check(Value::assetOk('assets::films/show.mp4'), 'an asset id is a container path');
+check(Value::assetOk('assets::../secret.mp4') === false, 'an asset path cannot climb');
+check(Value::folder('../secret') === '', 'a folder cannot climb');
+check(Value::folder(['videos/hero']) === 'videos/hero', 'a chosen folder is kept');
+$picked = Value::normalize(['asset' => 'assets::films/show.mp4', 'filename' => 'show.mp4']);
+check($picked !== null && $picked['asset'] === 'assets::films/show.mp4' && $picked['extension'] === 'mp4' && $picked['id'] === null, 'a library video does not need a uuid');
+check(count(Value::items([$picked, ['id' => $id, 'extension' => 'jpg']])) === 1, 'a list keeps only videos');
+check(count(Value::items($picked)) === 1, 'one video is still one video');
 
 check(Value::iniToBytes('20M') === 20 * 1024 * 1024, '20M is 20 mebibytes');
 check(Value::iniToBytes('0') === 0, 'unlimited ini is 0');

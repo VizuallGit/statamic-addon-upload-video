@@ -13,47 +13,55 @@
             },
             emits: ['update:value', 'focus', 'blur'],
             setup(props, { emit }) {
-                const video = ref(read(props.value));
+                const videos = ref(readList(props.value));
+                const active = ref(0);
                 const busy = ref(false);
                 const status = ref('');
                 const error = ref('');
-                const knownDuration = ref(video.value.duration);
                 const dragging = ref(false);
+                const showBrowser = ref(false);
+                const picks = ref([]);
                 let player = null;
                 let fileInput = null;
                 let dragDepth = 0;
                 let lastEmitted = null;
+                let posterTimer = null;
 
                 watch(() => props.value, (next) => {
                     if (JSON.stringify(next ?? null) === lastEmitted) {
                         return;
                     }
-                    video.value = read(next);
-                    knownDuration.value = video.value.duration;
+                    videos.value = readList(next);
+                    if (active.value >= videos.value.length) {
+                        active.value = 0;
+                    }
                 }, { deep: true });
 
-                function empty() {
-                    return read(null);
+                function readList(next) {
+                    const rows = Array.isArray(next) ? next : (next && typeof next === 'object' ? [next] : []);
+
+                    return rows.map(readOne).filter(Boolean);
                 }
 
-                function read(next) {
-                    if (!next || typeof next !== 'object' || !next.id) {
-                        return {
-                            id: null,
-                            filename: '',
-                            extension: '',
-                            poster_at: 1,
-                            size: 720,
-                            quality: 'standard',
-                            audio: true,
-                            duration: null,
-                        };
+                function readOne(next) {
+                    if (!next || typeof next !== 'object') {
+                        return null;
+                    }
+
+                    const asset = typeof next.asset === 'string' && next.asset !== '' ? next.asset : null;
+                    const id = typeof next.id === 'string' && next.id !== '' ? next.id : null;
+
+                    if (!asset && !id) {
+                        return null;
                     }
 
                     return {
-                        id: next.id,
+                        id,
+                        asset,
                         filename: next.filename || '',
                         extension: next.extension || '',
+                        url: typeof next.url === 'string' ? next.url : '',
+                        filesize: typeof next.filesize === 'string' ? next.filesize : '',
                         poster_at: Number(next.poster_at ?? 1),
                         size: next.size == null || next.size === 'original' ? 'original' : Number(next.size),
                         quality: next.quality || 'standard',
@@ -62,31 +70,44 @@
                     };
                 }
 
-                function emitValue() {
-                    if (!video.value.id) {
-                        lastEmitted = JSON.stringify(null);
-                        emit('update:value', null);
-                        return;
-                    }
+                function maxFiles() {
+                    const set = parseInt(props.meta.maxFiles ?? props.config.max_files, 10);
 
-                    const payload = {
-                        id: video.value.id,
-                        filename: video.value.filename,
-                        extension: video.value.extension,
-                        poster_at: clamp(video.value.poster_at, duration()),
-                        size: video.value.size === 'original' ? 'original' : Number(video.value.size),
-                        quality: video.value.quality,
-                        audio: video.value.audio,
-                        duration: duration(),
-                    };
-                    video.value.poster_at = payload.poster_at;
-                    lastEmitted = JSON.stringify(payload);
-                    emit('update:value', payload);
+                    return set >= 1 ? set : 1;
+                }
+
+                function allowsUploads() {
+                    return props.meta.allowUploads !== false;
+                }
+
+                function current() {
+                    return videos.value[active.value] || null;
+                }
+
+                function emitValue() {
+                    const rows = videos.value.map((item) => ({
+                        id: item.id,
+                        asset: item.asset,
+                        filename: item.filename,
+                        extension: item.extension,
+                        url: item.url || null,
+                        filesize: item.filesize || null,
+                        poster_at: clamp(item.poster_at, item.duration),
+                        size: item.size === 'original' ? 'original' : Number(item.size),
+                        quality: item.quality,
+                        audio: item.audio,
+                        duration: item.duration,
+                    }));
+                    const outgoing = maxFiles() === 1 ? (rows[0] ?? null) : rows;
+                    lastEmitted = JSON.stringify(outgoing);
+                    emit('update:value', outgoing);
                 }
 
                 function duration() {
+                    const item = current();
                     const fromPlayer = player && Number.isFinite(player.duration) ? player.duration : null;
-                    return fromPlayer || knownDuration.value || video.value.duration || null;
+
+                    return fromPlayer || (item && item.duration) || null;
                 }
 
                 function clamp(seconds, length) {
@@ -97,20 +118,25 @@
                     return Math.round(seconds * 100) / 100;
                 }
 
-                function previewSrc() {
-                    if (!video.value.id || !video.value.extension) {
+                function src(item) {
+                    if (!item) {
                         return '';
                     }
-                    return '/assets/upload-video/' + video.value.id + '.' + video.value.extension;
+                    if (item.url) {
+                        return item.url;
+                    }
+                    if (item.id && item.extension) {
+                        return '/assets/upload-video/' + item.id + '.' + item.extension;
+                    }
+                    return '';
                 }
 
-                let posterTimer = null;
-
                 function seek() {
-                    if (!player) {
+                    const item = current();
+                    if (!player || !item) {
                         return;
                     }
-                    const at = clamp(video.value.poster_at, duration());
+                    const at = clamp(item.poster_at, duration());
                     const show = () => {
                         player.pause();
                         const capture = () => schedulePoster();
@@ -138,7 +164,14 @@
                 }
 
                 function sendPoster() {
-                    if (!player || !video.value.id || !player.videoWidth || !props.meta.posterUrl) {
+                    const item = current();
+                    if (!player || !item || !player.videoWidth) {
+                        return;
+                    }
+                    const url = item.asset
+                        ? props.meta.posterAssetUrl
+                        : (item.id && props.meta.posterUrl ? props.meta.posterUrl.replace('__ID__', item.id) : '');
+                    if (!url) {
                         return;
                     }
                     const canvas = document.createElement('canvas');
@@ -150,12 +183,15 @@
                     }
                     context.drawImage(player, 0, 0, canvas.width, canvas.height);
                     canvas.toBlob((blob) => {
-                        if (!blob || !video.value.id) {
+                        if (!blob) {
                             return;
                         }
                         const body = new FormData();
                         body.append('poster', blob, 'poster.jpg');
-                        fetch(props.meta.posterUrl.replace('__ID__', video.value.id), {
+                        if (item.asset) {
+                            body.append('asset', item.asset);
+                        }
+                        fetch(url, {
                             method: 'POST',
                             credentials: 'same-origin',
                             headers: {
@@ -169,13 +205,14 @@
                 }
 
                 function onMetadata() {
-                    if (player && Number.isFinite(player.duration)) {
-                        knownDuration.value = player.duration;
-                        video.value.duration = player.duration;
-                        video.value.poster_at = clamp(video.value.poster_at, player.duration);
-                        emitValue();
-                        seek();
+                    const item = current();
+                    if (!player || !item || !Number.isFinite(player.duration)) {
+                        return;
                     }
+                    item.duration = player.duration;
+                    item.poster_at = clamp(item.poster_at, player.duration);
+                    emitValue();
+                    seek();
                 }
 
                 function setPlayer(element) {
@@ -186,9 +223,18 @@
                 }
 
                 function setPoster(raw) {
-                    video.value.poster_at = clamp(raw, duration());
+                    const item = current();
+                    if (!item) {
+                        return;
+                    }
+                    item.poster_at = clamp(raw, duration());
                     emitValue();
                     seek();
+                }
+
+                function choose(index) {
+                    active.value = index;
+                    player = null;
                 }
 
                 async function upload(event) {
@@ -197,7 +243,6 @@
                     if (!file) {
                         return;
                     }
-
                     await storeFile(file);
                 }
 
@@ -214,9 +259,17 @@
                 }
 
                 async function storeFile(file) {
+                    if (!allowsUploads()) {
+                        return;
+                    }
+                    if (maxFiles() > 1 && videos.value.length >= maxFiles()) {
+                        error.value = 'Du kan højst vælge ' + maxFiles() + ' videoer.';
+                        return;
+                    }
+
                     error.value = '';
                     busy.value = true;
-                    const previous = video.value.id;
+                    const previous = maxFiles() === 1 ? videos.value[0] : null;
                     const withoutAudio = props.meta.audio === false;
                     const working = 'Gør videoen mindre…';
                     status.value = working;
@@ -257,6 +310,10 @@
                             if (id) {
                                 body.append('id', id);
                             }
+                            if (props.meta.container && props.meta.container.id) {
+                                body.append('container', props.meta.container.id);
+                            }
+                            body.append('folder', props.meta.folder && props.meta.folder !== '/' ? props.meta.folder : '');
                             body.append('max_bytes', String(max.bytes));
                             body.append('max_token', props.meta.maxToken || '');
                             body.append('chunk', slice, smaller.name);
@@ -271,11 +328,11 @@
                                 body,
                             });
                             const json = await response.json().catch(() => ({}));
-                            if (!response.ok || !json.id) {
+                            if (!response.ok || (!json.id && !json.asset)) {
                                 throw new Error(json.message || 'Videoen kunne ikke uploades.');
                             }
-                            id = json.id;
-                            if (json.filename) {
+                            id = json.id || id;
+                            if (json.filename || json.asset) {
                                 saved = json;
                             }
                         }
@@ -285,14 +342,19 @@
                         }
 
                         saved.size = Number(props.meta.size) === 1080 ? 1080 : 720;
-                        saved.quality = video.value.quality;
+                        saved.quality = previous ? previous.quality : 'standard';
                         saved.audio = !withoutAudio;
-                        video.value = read(saved);
-                        knownDuration.value = video.value.duration;
-                        emitValue();
+                        const item = readOne(saved);
+                        if (!item) {
+                            throw new Error('Videoen kunne ikke uploades.');
+                        }
+                        if (!item.url && item.id && item.extension) {
+                            item.url = '/assets/upload-video/' + item.id + '.' + item.extension;
+                        }
+                        put(item);
 
-                        if (previous && previous !== saved.id) {
-                            remove(previous);
+                        if (previous && previous.id && !previous.asset && previous.id !== item.id) {
+                            removeFile(previous.id);
                         }
                     } catch (e) {
                         error.value = e.message || 'Videoen kunne ikke uploades.';
@@ -302,9 +364,22 @@
                     }
                 }
 
-                function remove(id) {
+                function put(item) {
+                    if (maxFiles() === 1) {
+                        videos.value = [item];
+                        active.value = 0;
+                    } else {
+                        const rest = videos.value.filter((row) => (item.asset ? row.asset !== item.asset : row.id !== item.id));
+                        rest.push(item);
+                        videos.value = rest.slice(0, maxFiles());
+                        active.value = videos.value.length - 1;
+                    }
+                    emitValue();
+                }
+
+                function removeFile(id) {
                     const url = (props.meta.deleteUrl || '').replace('__ID__', id);
-                    if (!url) {
+                    if (!url || url.indexOf('__ID__') !== -1) {
                         return;
                     }
                     fetch(url, {
@@ -318,12 +393,15 @@
                     });
                 }
 
-                function clear() {
-                    if (video.value.id) {
-                        remove(video.value.id);
+                function removeAt(index) {
+                    const item = videos.value[index];
+                    if (item && item.id && !item.asset) {
+                        removeFile(item.id);
                     }
-                    video.value = empty();
-                    knownDuration.value = null;
+                    videos.value = videos.value.filter((_, row) => row !== index);
+                    if (active.value >= videos.value.length) {
+                        active.value = Math.max(0, videos.value.length - 1);
+                    }
                     player = null;
                     emitValue();
                 }
@@ -333,13 +411,103 @@
                 }
 
                 function openPicker() {
-                    if (busy.value || !fileInput) {
+                    if (busy.value || !fileInput || !allowsUploads()) {
                         return;
                     }
                     fileInput.click();
                 }
 
+                function openBrowser() {
+                    if (busy.value || props.meta.dynamicPending) {
+                        return;
+                    }
+                    if (!props.meta.container) {
+                        error.value = 'Vælg en container på feltet.';
+                        return;
+                    }
+                    error.value = '';
+                    picks.value = videos.value.map((item) => item.asset).filter(Boolean);
+                    showBrowser.value = true;
+                    emit('focus');
+                }
+
+                function closeBrowser() {
+                    showBrowser.value = false;
+                    emit('blur');
+                }
+
+                async function commitPicks() {
+                    if (busy.value) {
+                        return;
+                    }
+                    const ids = picks.value.slice(0, maxFiles());
+                    if (ids.length === 0) {
+                        videos.value = [];
+                        active.value = 0;
+                        emitValue();
+                        closeBrowser();
+                        return;
+                    }
+
+                    busy.value = true;
+                    error.value = '';
+                    try {
+                        const response = await fetch(props.meta.assetsUrl, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                'X-CSRF-TOKEN': Statamic.$config.get('csrfToken'),
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ assets: ids }),
+                        });
+                        const json = await response.json().catch(() => []);
+                        const rows = Array.isArray(json) ? json : [];
+                        const videosOnly = rows.filter((row) => ['mp4', 'm4v', 'webm', 'mov', 'ogv'].indexOf(String(row.extension || '').toLowerCase()) !== -1);
+                        if (videosOnly.length === 0) {
+                            error.value = 'Vælg en videofil.';
+                            return;
+                        }
+                        const kept = new Map(videos.value.filter((item) => item.asset).map((item) => [item.asset, item]));
+                        videos.value = videosOnly.slice(0, maxFiles()).map((row) => {
+                            const previous = kept.get(row.id);
+                            return readOne({
+                                asset: row.id,
+                                filename: row.basename || row.filename || '',
+                                extension: row.extension,
+                                url: row.url,
+                                filesize: row.size,
+                                poster_at: previous ? previous.poster_at : 1,
+                                size: previous ? previous.size : 720,
+                                quality: previous ? previous.quality : 'standard',
+                                audio: previous ? previous.audio : true,
+                                duration: row.duration != null ? row.duration : (previous ? previous.duration : null),
+                            });
+                        }).filter(Boolean);
+                        active.value = 0;
+                        emitValue();
+                        closeBrowser();
+                    } catch (e) {
+                        error.value = 'Videoen kunne ikke vælges.';
+                    } finally {
+                        busy.value = false;
+                    }
+                }
+
+                function onPicks(ids) {
+                    const list = Array.isArray(ids) ? ids.slice(0, maxFiles()) : [];
+                    picks.value = list;
+                    if (maxFiles() === 1 && list.length === 1) {
+                        commitPicks();
+                    }
+                }
+
                 function onDragEnter(event) {
+                    if (!allowsUploads()) {
+                        return;
+                    }
                     event.preventDefault();
                     if (busy.value) {
                         return;
@@ -349,7 +517,9 @@
                 }
 
                 function onDragOver(event) {
-                    event.preventDefault();
+                    if (allowsUploads()) {
+                        event.preventDefault();
+                    }
                 }
 
                 function onDragLeave() {
@@ -360,6 +530,9 @@
                 }
 
                 function onDrop(event) {
+                    if (!allowsUploads()) {
+                        return;
+                    }
                     event.preventDefault();
                     dragDepth = 0;
                     dragging.value = false;
@@ -377,9 +550,9 @@
                     if (resolved && resolved !== name) {
                         return resolved;
                     }
-                    const current = window.Vue.getCurrentInstance();
-                    const registered = current && current.appContext && current.appContext.components
-                        ? current.appContext.components[name]
+                    const currentInstance = window.Vue.getCurrentInstance();
+                    const registered = currentInstance && currentInstance.appContext && currentInstance.appContext.components
+                        ? currentInstance.appContext.components[name]
                         : null;
                     return registered || null;
                 }
@@ -389,23 +562,16 @@
                     if (Icon) {
                         return h(Icon, { name, class: className });
                     }
-                    return h('svg', {
-                        xmlns: 'http://www.w3.org/2000/svg',
-                        viewBox: '0 0 24 24',
-                        fill: 'none',
-                        stroke: 'currentColor',
-                        'stroke-width': '1.5',
-                        class: className,
-                        'aria-hidden': 'true',
-                    }, [
-                        h('path', {
-                            'stroke-linecap': 'round',
-                            'stroke-linejoin': 'round',
-                            d: name === 'folder-open'
-                                ? 'M3 7.5h6l1.5-2h9.5v11.5a1.5 1.5 0 0 1-1.5 1.5H4.5A1.5 1.5 0 0 1 3 16.5z'
-                                : 'M12 16V8m0 0 3 3m-3-3-3 3M4 16.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5',
-                        }),
-                    ]);
+                    return null;
+                }
+
+                function selectedText() {
+                    const count = videos.value.length;
+                    const max = maxFiles();
+                    if (typeof __n === 'function') {
+                        return __n(':count/:max selected', count, { max: max });
+                    }
+                    return count + '/' + max;
                 }
 
                 function choice(label, control) {
@@ -416,129 +582,166 @@
                 }
 
                 return () => {
+                    const Button = part('ui-button');
+                    const Stack = part('ui-stack');
+                    const Browser = part('asset-browser');
+                    const item = current();
                     const length = duration();
-                    const Button = part('Button');
-                    const hasFile = !!video.value.id;
+                    const hasFile = videos.value.length > 0;
+                    const pending = props.meta.dynamicPending === true;
                     const pickerClass = 'not-[.link-fieldtype_&]:p-2 not-[.link-fieldtype_&]:border border-gray-300 dark:border-gray-700 dark:bg-gray-850 rounded-xl flex flex-col @[22rem]:flex-row gap-2 sm:gap-3 gap-y-3'
                         + (hasFile ? ' rounded-b-none' : '');
-                    const choose = Button
+                    const browse = Button
                         ? h(Button, {
-                            type: 'button',
                             icon: 'folder-open',
-                            text: 'Vælg video',
+                            text: 'Browse video',
                             class: 'w-full @2xs:w-auto',
-                            disabled: busy.value,
-                            onClick: openPicker,
+                            disabled: busy.value || pending,
+                            onClick: openBrowser,
                         })
                         : h('button', {
                             type: 'button',
                             class: 'vzl-uv-browse',
-                            disabled: busy.value,
-                            onClick: openPicker,
-                        }, [
-                            icon('folder-open', 'size-5'),
-                            'Vælg video',
-                        ]);
-                    const remove = Button
-                        ? h(Button, {
-                            type: 'button',
-                            variant: 'ghost',
-                            size: 'sm',
-                            icon: 'trash',
-                            text: 'Fjern',
-                            disabled: busy.value,
-                            onClick: clear,
-                        })
-                        : h('button', {
-                            type: 'button',
-                            class: 'vzl-uv-link',
-                            disabled: busy.value,
-                            onClick: clear,
-                        }, 'Fjern');
+                            disabled: busy.value || pending,
+                            onClick: openBrowser,
+                        }, 'Browse video');
                     const hint = busy.value
                         ? [h('span', { class: 'leading-tight' }, status.value || 'Uploader…')]
                         : [
-                            h('span', { class: 'leading-tight' }, 'Træk hertil eller '),
-                            h('button', {
+                            allowsUploads() ? h('span', { class: 'leading-tight' }, 'Træk hertil eller ') : null,
+                            allowsUploads() ? h('button', {
                                 type: 'button',
                                 class: 'text-left underline underline-offset-2 cursor-pointer hover:text-gray-925 dark:hover:text-gray-200',
                                 onClick: openPicker,
-                            }, 'vælg en fil'),
-                            h('span', '. '),
-                            h('span', { class: 'leading-tight whitespace-nowrap' }, (hasFile ? '1' : '0') + '/1 valgt'),
+                            }, 'vælg en fil') : null,
+                            allowsUploads() ? h('span', '. ') : null,
+                            h('span', { class: 'leading-tight whitespace-nowrap' }, selectedText()),
                         ];
-                    const shell = [
-                        h('input', {
-                            type: 'file',
-                            accept: 'video/mp4,video/webm,video/quicktime,video/ogg,.mp4,.m4v,.webm,.mov,.ogv',
-                            class: 'sr-only',
-                            ref: setFileInput,
+                    const rows = videos.value.map((row, index) => h('div', {
+                        key: row.asset || row.id,
+                        class: 'flex items-center gap-3 px-3 py-2' + (index > 0 ? ' border-t border-gray-200 dark:border-gray-700' : '') + (maxFiles() > 1 && index === active.value ? ' bg-gray-100 dark:bg-gray-800' : ''),
+                        onClick: () => choose(index),
+                    }, [
+                        icon('video', 'size-5 text-gray-500 shrink-0'),
+                        h('span', { class: 'truncate flex-1 text-sm text-gray-800 dark:text-gray-100' }, row.filename),
+                        row.filesize ? h('span', { class: 'text-xs text-gray-500 shrink-0' }, row.filesize) : null,
+                        h('button', {
+                            type: 'button',
+                            class: 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 text-sm leading-none px-1',
                             disabled: busy.value,
-                            onChange: upload,
-                        }),
-                        dragging.value ? h('div', {
-                            class: 'absolute inset-0 z-(--z-index-above) flex gap-2 items-center justify-center bg-white/80 border border-gray-400 border-dashed rounded-lg text-gray-700 pointer-events-none',
-                        }, [
-                            icon('upload-cloud', 'size-5'),
-                            h('span', { class: 'text-sm' }, 'Slip for at uploade'),
-                        ]) : null,
-                        h('div', { class: pickerClass, 'data-asset-picker': '' }, [
-                            choose,
-                            h('div', { class: 'text-sm text-gray-600 dark:text-gray-400 flex items-center flex-1 gap-1 ms-1' }, [
-                                icon('upload-cloud', 'size-5 text-gray-500 me-2'),
-                                h('div', { class: 'text-xs' }, hint),
+                            onClick: (event) => {
+                                event.stopPropagation();
+                                removeAt(index);
+                            },
+                        }, '×'),
+                    ]));
+                    const shell = pending
+                        ? [h('div', {
+                            class: 'w-full rounded-md border border-dashed border-gray-300 dark:border-gray-300 px-4 py-3 text-sm text-gray-700 dark:text-gray-200',
+                        }, 'Gem siden, så mappen kan bruges.')]
+                        : [
+                            allowsUploads() ? h('input', {
+                                type: 'file',
+                                accept: 'video/mp4,video/webm,video/quicktime,video/ogg,.mp4,.m4v,.webm,.mov,.ogv',
+                                class: 'sr-only',
+                                ref: setFileInput,
+                                disabled: busy.value,
+                                onChange: upload,
+                            }) : null,
+                            dragging.value ? h('div', {
+                                class: 'absolute inset-0 z-(--z-index-above) flex gap-2 items-center justify-center bg-white/80 border border-gray-400 border-dashed rounded-lg text-gray-700 pointer-events-none',
+                            }, [
+                                icon('upload-cloud', 'size-5'),
+                                h('span', { class: 'text-sm' }, 'Slip for at uploade'),
+                            ]) : null,
+                            h('div', { class: pickerClass, 'data-asset-picker': '' }, [
+                                browse,
+                                h('div', { class: 'text-sm text-gray-600 dark:text-gray-400 flex items-center flex-1 gap-1 ms-1' }, [
+                                    allowsUploads() ? icon('upload-cloud', 'size-5 text-gray-500 me-2') : null,
+                                    h('div', { class: 'text-xs' }, hint),
+                                ]),
                             ]),
-                        ]),
-                    ];
+                        ];
 
-                    if (hasFile) {
+                    if (hasFile && !pending) {
                         shell.push(h('div', {
-                            class: 'bg-white dark:bg-gray-850 relative border border-gray-300 dark:border-gray-700 border-t-0 rounded-xl rounded-t-none p-3 flex flex-col gap-3',
+                            class: 'bg-white dark:bg-gray-850 relative border border-gray-300 dark:border-gray-700 border-t-0 rounded-xl rounded-t-none',
                         }, [
-                            h('video', {
-                                key: video.value.id,
-                                ref: setPlayer,
-                                class: 'vzl-uv-player',
-                                src: previewSrc(),
-                                controls: true,
-                                playsinline: true,
-                                preload: 'metadata',
-                                onLoadedmetadata: onMetadata,
-                            }),
-                            h('div', { class: 'flex items-center justify-between gap-2' }, [
-                                h('p', { class: 'vzl-uv-name' }, video.value.filename),
-                                remove,
-                            ]),
-                            choice('Poster ved', h('div', { class: 'vzl-uv-poster' }, [
-                                h('input', {
-                                    type: 'range',
-                                    min: '0',
-                                    max: String(length && length > 0 ? length : 60),
-                                    step: '0.1',
-                                    value: video.value.poster_at,
-                                    disabled: !length,
-                                    onInput: (event) => setPoster(event.target.value),
+                            h('div', rows),
+                            item ? h('div', { class: 'p-3 flex flex-col gap-3 border-t border-gray-200 dark:border-gray-700' }, [
+                                h('video', {
+                                    key: item.asset || item.id,
+                                    ref: setPlayer,
+                                    class: 'vzl-uv-player',
+                                    src: src(item),
+                                    controls: true,
+                                    playsinline: true,
+                                    preload: 'metadata',
+                                    onLoadedmetadata: onMetadata,
                                 }),
-                                h('input', {
-                                    type: 'number',
-                                    class: 'input-text vzl-uv-seconds',
-                                    min: '0',
-                                    max: length && length > 0 ? String(length) : null,
-                                    step: '0.1',
-                                    value: video.value.poster_at,
-                                    onInput: (event) => setPoster(event.target.value),
-                                    onFocus: () => emit('focus'),
-                                    onBlur: () => emit('blur'),
-                                }),
-                                h('span', { class: 'vzl-uv-unit' }, length ? 'sek af ' + length.toFixed(1).replace('.', ',') : 'sek'),
-                            ])),
-                            h('p', { class: 'vzl-uv-note' }, 'Poster-billedet gemmes fra det sekund, du vælger.'),
+                                choice('Poster ved', h('div', { class: 'vzl-uv-poster' }, [
+                                    h('input', {
+                                        type: 'range',
+                                        min: '0',
+                                        max: String(length && length > 0 ? length : 60),
+                                        step: '0.1',
+                                        value: item.poster_at,
+                                        disabled: !length,
+                                        onInput: (event) => setPoster(event.target.value),
+                                    }),
+                                    h('input', {
+                                        type: 'number',
+                                        class: 'input-text vzl-uv-seconds',
+                                        min: '0',
+                                        max: length && length > 0 ? String(length) : null,
+                                        step: '0.1',
+                                        value: item.poster_at,
+                                        onInput: (event) => setPoster(event.target.value),
+                                        onFocus: () => emit('focus'),
+                                        onBlur: () => emit('blur'),
+                                    }),
+                                    h('span', { class: 'vzl-uv-unit' }, length ? 'sek af ' + length.toFixed(1).replace('.', ',') : 'sek'),
+                                ])),
+                                h('p', { class: 'vzl-uv-note' }, 'Poster-billedet gemmes fra det sekund, du vælger.'),
+                            ]) : null,
                         ]));
                     }
 
+                    const browser = showBrowser.value && Stack && Browser && props.meta.container
+                        ? h(Stack, {
+                            open: true,
+                            inset: '',
+                            'show-close-button': false,
+                            'onUpdate:open': (open) => {
+                                if (!open) {
+                                    closeBrowser();
+                                }
+                            },
+                        }, {
+                            default: () => h('div', { class: 'flex h-full min-h-0 flex-col' }, [
+                                h(Browser, {
+                                    class: 'flex-1 min-h-0',
+                                    container: props.meta.container,
+                                    selectedPath: props.meta.folder || '/',
+                                    selectedAssets: picks.value,
+                                    restrictFolderNavigation: props.meta.restrict === true,
+                                    maxFiles: maxFiles(),
+                                    onSelectionsUpdated: onPicks,
+                                }),
+                                h('div', { class: 'flex items-center justify-between border-t bg-gray-100 dark:bg-gray-850 dark:border-gray-700 px-4 py-2' }, [
+                                    h('span', { class: 'text-sm text-gray-700 dark:text-gray-200' }, picks.value.length + '/' + maxFiles()),
+                                    h('div', { class: 'flex items-center gap-2' }, [
+                                        Button ? h(Button, { variant: 'ghost', text: 'Annuller', onClick: closeBrowser }) : h('button', { type: 'button', onClick: closeBrowser }, 'Annuller'),
+                                        Button ? h(Button, { variant: 'primary', text: 'Vælg', disabled: busy.value, onClick: commitPicks }) : h('button', { type: 'button', onClick: commitPicks }, 'Vælg'),
+                                    ]),
+                                ]),
+                            ]),
+                        })
+                        : null;
+
                     return h('div', { class: 'vzl-uv' }, [
                         h('div', {
-                            class: '@container relative w-full',
+                            class: '@container relative w-full bg-gray-50 dark:bg-transparent rounded-xl',
                             onDragenter: onDragEnter,
                             onDragover: onDragOver,
                             onDragleave: onDragLeave,
@@ -546,6 +749,7 @@
                         }, shell),
                         h('p', { class: 'vzl-uv-note' }, 'Højst ' + configuredMax().mb + ' MB.'),
                         error.value ? h('p', { class: 'vzl-uv-warn' }, error.value) : null,
+                        browser,
                     ]);
                 };
             },

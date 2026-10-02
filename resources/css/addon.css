@@ -62,21 +62,23 @@
 .vzl-uv-browse {
     display: inline-flex;
     align-items: center;
+    align-self: flex-start;
     gap: 0.5rem;
     flex: 0 0 auto;
+    width: auto;
     font-size: 0.8125rem;
     line-height: 1.25;
     padding: 0.35rem 0.75rem;
     border-radius: 0.5rem;
     border: 1px solid #d1d5db;
-    background: #fff;
+    background: transparent;
     color: #111827;
     cursor: pointer;
 }
 
 .dark .vzl-uv-browse {
     border-color: #374151;
-    background: #1f2937;
+    background: transparent;
     color: #e5e7eb;
 }
 

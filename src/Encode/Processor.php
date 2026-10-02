@@ -23,6 +23,28 @@ final class Processor
             return null;
         }
 
+        if (is_string($value['asset'] ?? null)) {
+            $asset = \Statamic\Facades\Asset::find($value['asset']);
+            $url = $asset?->url();
+            $poster = null;
+
+            if ($asset !== null) {
+                $posterPath = preg_replace('/\.[^.]+$/', '.poster.jpg', $asset->path()) ?? '';
+                $poster = $asset->container()->disk()->exists($posterPath)
+                    ? (preg_replace('/\.[^.]+$/', '.poster.jpg', (string) $url) ?: null)
+                    : null;
+            }
+
+            return [
+                'url' => $url,
+                'poster' => $poster,
+                'poster_at' => $value['poster_at'],
+                'filename' => $value['filename'],
+                'duration' => $value['duration'],
+                'ready' => $url !== null,
+            ];
+        }
+
         $videoName = $value['id'].'.'.$value['extension'];
         $posterName = $value['id'].'.jpg';
         $dir = $this->publicDir();
