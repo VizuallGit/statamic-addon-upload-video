@@ -90,6 +90,11 @@
     color: #fff;
 }
 
+.vzl-uv-audio-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
 .vzl-uv-note,
 .vzl-uv-warn {
     margin: 0;

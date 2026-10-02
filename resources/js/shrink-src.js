@@ -16,7 +16,7 @@ import { targetHeight } from './target-height.mjs';
 /**
  * Makes a smaller H.264 MP4 in the browser. The PHP server only stores the result.
  */
-export async function shrink(file, onProgress) {
+export async function shrink(file, onProgress, options = {}) {
     const input = new Input({
         formats: [MP4, QTFF, WEBM, OGG],
         source: new BlobSource(file),
@@ -42,16 +42,18 @@ export async function shrink(file, onProgress) {
                     hardwareAcceleration: 'prefer-hardware',
                 };
             },
-            audio: async (track) => {
-                if (track.number > 1) {
-                    return { discard: true };
-                }
+            audio: options.audio === false
+                ? { discard: true }
+                : async (track) => {
+                    if (track.number > 1) {
+                        return { discard: true };
+                    }
 
-                return {
-                    codec: 'aac',
-                    quality: new Quality('low'),
-                };
-            },
+                    return {
+                        codec: 'aac',
+                        quality: new Quality('low'),
+                    };
+                },
         });
 
         if (!conversion.isValid) {

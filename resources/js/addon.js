@@ -18,6 +18,7 @@
                 const status = ref('');
                 const error = ref('');
                 const knownDuration = ref(video.value.duration);
+                const mute = ref(video.value.audio === false);
                 let player = null;
                 let lastEmitted = null;
 
@@ -27,6 +28,9 @@
                     }
                     video.value = read(next);
                     knownDuration.value = video.value.duration;
+                    if (video.value.id) {
+                        mute.value = video.value.audio === false;
+                    }
                 }, { deep: true });
 
                 function empty() {
@@ -195,10 +199,51 @@
                         return;
                     }
 
+                    await storeFile(file, mute.value);
+                }
+
+                async function setMute(withoutAudio) {
+                    if (busy.value) {
+                        return;
+                    }
+
+                    error.value = '';
+
+                    if (!video.value.id) {
+                        mute.value = withoutAudio;
+                        return;
+                    }
+
+                    if (withoutAudio === (video.value.audio === false)) {
+                        return;
+                    }
+
+                    if (!withoutAudio) {
+                        error.value = 'Lyden er fjernet. Vælg videoen igen, hvis den skal med.';
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch(previewSrc(), { credentials: 'same-origin' });
+                        if (!response.ok) {
+                            throw new Error('Videoen kunne ikke hentes.');
+                        }
+                        const blob = await response.blob();
+                        const name = video.value.filename || 'video.mp4';
+                        await storeFile(new File([blob], name, { type: blob.type || 'video/mp4' }), true);
+                    } catch (e) {
+                        if (!error.value) {
+                            error.value = e.message || 'Lyden kunne ikke fjernes.';
+                        }
+                    }
+                }
+
+                async function storeFile(file, withoutAudio) {
                     error.value = '';
                     busy.value = true;
-                    status.value = 'Gør videoen mindre…';
                     const previous = video.value.id;
+                    const working = withoutAudio && previous ? 'Fjerner lyden…' : 'Gør videoen mindre…';
+                    status.value = working;
 
                     try {
                         const maxBytes = Number(props.meta.maxBytes) || (60 * 1024 * 1024);
@@ -213,8 +258,8 @@
                         }
 
                         const smaller = await window.VzlUploadVideoShrink.shrink(file, (progress) => {
-                            status.value = 'Gør videoen mindre… ' + Math.round((Number(progress) || 0) * 100) + ' %';
-                        });
+                            status.value = working + ' ' + Math.round((Number(progress) || 0) * 100) + ' %';
+                        }, { audio: !withoutAudio });
                         if (smaller.size > maxBytes) {
                             throw new Error(tooBig);
                         }
@@ -260,8 +305,9 @@
 
                         saved.size = video.value.size;
                         saved.quality = video.value.quality;
-                        saved.audio = video.value.audio;
+                        saved.audio = !withoutAudio;
                         video.value = read(saved);
+                        mute.value = withoutAudio;
                         knownDuration.value = video.value.duration;
                         emitValue();
 
@@ -309,9 +355,24 @@
                     ]);
                 }
 
+                function soundButton(label, withoutAudio) {
+                    const active = mute.value === withoutAudio;
+                    return h('button', {
+                        type: 'button',
+                        class: 'vzl-uv-audio-btn' + (active ? ' is-active' : ''),
+                        disabled: busy.value,
+                        onClick: () => setMute(withoutAudio),
+                    }, label);
+                }
+
                 return () => {
                     const length = duration();
                     const children = [];
+
+                    children.push(h('div', { class: 'vzl-uv-audio' }, [
+                        soundButton('Med lyd', false),
+                        soundButton('Uden lyd', true),
+                    ]));
 
                     if (!video.value.id) {
                         children.push(h('label', { class: 'vzl-uv-pick' }, [
