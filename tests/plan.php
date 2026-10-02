@@ -93,15 +93,24 @@ require __DIR__.'/../src/Chunks.php';
 
 use Vizuall\UploadVideo\Chunks;
 
-check(Chunks::MAX_BYTES === 60 * 1024 * 1024, 'a video cannot exceed 60 MB');
-check(Chunks::tooBigMessage() === 'Videoen må højst være 60 MB.', 'the limit is told in megabytes');
+check(Value::limits([])['maxMb'] === 30, 'the field defaults to 30 MB');
+check(Value::limits(['max_mb' => 20])['maxMb'] === 20, 'the field max is the number that was set');
+check(Value::limits(['max_mb' => 20])['maxBytes'] === 20 * 1024 * 1024, '20 MB is 20 mebibytes');
+check(Value::limits(['size' => '1080'])['size'] === 1080, '1080p is kept');
+check(Value::limits(['quality' => '10'])['quality'] === 0.1, '10 percent quality');
+check(Value::limits(['mute' => true])['audio'] === false, 'mute strips audio');
+check(Value::limits(['max_mb' => 0])['maxMb'] === 30, 'an empty max falls back to 30');
+$token = Value::maxToken(20 * 1024 * 1024, 'test-key');
+check(Value::acceptedMax(20 * 1024 * 1024, $token, 'test-key') === 20 * 1024 * 1024, 'a matching token keeps 20 MB');
+check(Value::acceptedMax(10 * 1024 * 1024, $token, 'test-key') === null, 'a changed max is rejected');
+check(Chunks::tooBigMessage(20 * 1024 * 1024) === 'Videoen må højst være 20 MB.', 'the message uses the field max');
 
 $movie = "\x00\x00\x00\x18ftypisom"."\x00\x00\x02\x00mdat";
 $parts = Chunks::directory($id);
 mkdir($parts, 0755, true);
 file_put_contents($parts.'/0', substr($movie, 0, 8));
 file_put_contents($parts.'/1', substr($movie, 8));
-Chunks::finish($id, 2, 'mp4');
+Chunks::finish($id, 2, 'mp4', 30 * 1024 * 1024);
 $joined = public_path('assets/upload-video/'.$id.'.mp4');
 check(is_file($joined) && file_get_contents($joined) === $movie, 'chunks join into one mp4');
 check(is_dir($parts) === false, 'part files are removed after join');
@@ -111,7 +120,7 @@ mkdir($parts, 0755, true);
 file_put_contents($parts.'/0', "PK\x03\x04not-a-video");
 $rejected = false;
 try {
-    Chunks::finish($id, 1, 'mp4');
+    Chunks::finish($id, 1, 'mp4', 30 * 1024 * 1024);
 } catch (RuntimeException) {
     $rejected = true;
 }

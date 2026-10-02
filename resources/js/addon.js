@@ -18,7 +18,6 @@
                 const status = ref('');
                 const error = ref('');
                 const knownDuration = ref(video.value.duration);
-                const mute = ref(video.value.audio === false);
                 const dragging = ref(false);
                 let player = null;
                 let fileInput = null;
@@ -31,9 +30,6 @@
                     }
                     video.value = read(next);
                     knownDuration.value = video.value.duration;
-                    if (video.value.id) {
-                        mute.value = video.value.audio === false;
-                    }
                 }, { deep: true });
 
                 function empty() {
@@ -202,57 +198,33 @@
                         return;
                     }
 
-                    await storeFile(file, mute.value);
+                    await storeFile(file);
                 }
 
-                async function setMute(withoutAudio) {
-                    if (busy.value) {
-                        return;
+                function configuredMax() {
+                    const mb = Number(props.meta.maxMb);
+                    if (mb >= 1) {
+                        return { mb: Math.round(mb), bytes: Math.round(mb) * 1024 * 1024 };
                     }
-
-                    error.value = '';
-
-                    if (!video.value.id) {
-                        mute.value = withoutAudio;
-                        return;
+                    const bytes = Number(props.meta.maxBytes);
+                    if (bytes >= 1024 * 1024) {
+                        return { mb: Math.round(bytes / (1024 * 1024)), bytes };
                     }
-
-                    if (withoutAudio === (video.value.audio === false)) {
-                        return;
-                    }
-
-                    if (!withoutAudio) {
-                        error.value = 'Lyden er fjernet. Vælg videoen igen, hvis den skal med.';
-                        return;
-                    }
-
-                    try {
-                        const response = await fetch(previewSrc(), { credentials: 'same-origin' });
-                        if (!response.ok) {
-                            throw new Error('Videoen kunne ikke hentes.');
-                        }
-                        const blob = await response.blob();
-                        const name = video.value.filename || 'video.mp4';
-                        await storeFile(new File([blob], name, { type: blob.type || 'video/mp4' }), true);
-                    } catch (e) {
-                        if (!error.value) {
-                            error.value = e.message || 'Lyden kunne ikke fjernes.';
-                        }
-                    }
+                    return { mb: 30, bytes: 30 * 1024 * 1024 };
                 }
 
-                async function storeFile(file, withoutAudio) {
+                async function storeFile(file) {
                     error.value = '';
                     busy.value = true;
                     const previous = video.value.id;
-                    const working = withoutAudio && previous ? 'Fjerner lyden…' : 'Gør videoen mindre…';
+                    const withoutAudio = props.meta.audio === false;
+                    const working = 'Gør videoen mindre…';
                     status.value = working;
 
                     try {
-                        const maxBytes = Number(props.meta.maxBytes) || (60 * 1024 * 1024);
-                        const maxMb = Math.max(1, Math.round(maxBytes / (1024 * 1024)));
-                        const tooBig = 'Videoen må højst være ' + maxMb + ' MB.';
-                        if (file.size > maxBytes) {
+                        const max = configuredMax();
+                        const tooBig = 'Videoen må højst være ' + max.mb + ' MB.';
+                        if (file.size > max.bytes) {
                             throw new Error(tooBig);
                         }
 
@@ -262,8 +234,12 @@
 
                         const smaller = await window.VzlUploadVideoShrink.shrink(file, (progress) => {
                             status.value = working + ' ' + Math.round((Number(progress) || 0) * 100) + ' %';
-                        }, { audio: !withoutAudio });
-                        if (smaller.size > maxBytes) {
+                        }, {
+                            audio: !withoutAudio,
+                            height: Number(props.meta.size) === 1080 ? 1080 : 720,
+                            quality: Number(props.meta.quality),
+                        });
+                        if (smaller.size > max.bytes) {
                             throw new Error(tooBig);
                         }
                         const chunkBytes = Math.max(1, Number(props.meta.chunkBytes) || (1024 * 1024));
@@ -281,6 +257,8 @@
                             if (id) {
                                 body.append('id', id);
                             }
+                            body.append('max_bytes', String(max.bytes));
+                            body.append('max_token', props.meta.maxToken || '');
                             body.append('chunk', slice, smaller.name);
                             const response = await fetch(props.meta.uploadUrl, {
                                 method: 'POST',
@@ -306,11 +284,10 @@
                             throw new Error('Videoen kunne ikke uploades.');
                         }
 
-                        saved.size = video.value.size;
+                        saved.size = Number(props.meta.size) === 1080 ? 1080 : 720;
                         saved.quality = video.value.quality;
                         saved.audio = !withoutAudio;
                         video.value = read(saved);
-                        mute.value = withoutAudio;
                         knownDuration.value = video.value.duration;
                         emitValue();
 
@@ -391,7 +368,7 @@
                     }
                     const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
                     if (file) {
-                        storeFile(file, mute.value);
+                        storeFile(file);
                     }
                 }
 
@@ -436,16 +413,6 @@
                         h('span', { class: 'vzl-uv-label' }, label),
                         control,
                     ]);
-                }
-
-                function soundButton(label, withoutAudio) {
-                    const active = mute.value === withoutAudio;
-                    return h('button', {
-                        type: 'button',
-                        class: 'vzl-uv-audio-btn' + (active ? ' is-active' : ''),
-                        disabled: busy.value,
-                        onClick: () => setMute(withoutAudio),
-                    }, label);
                 }
 
                 return () => {
@@ -542,10 +509,6 @@
                                 h('p', { class: 'vzl-uv-name' }, video.value.filename),
                                 remove,
                             ]),
-                            h('div', { class: 'vzl-uv-audio' }, [
-                                soundButton('Med lyd', false),
-                                soundButton('Uden lyd', true),
-                            ]),
                             choice('Poster ved', h('div', { class: 'vzl-uv-poster' }, [
                                 h('input', {
                                     type: 'range',
@@ -573,8 +536,6 @@
                         ]));
                     }
 
-                    const maxMb = Math.max(1, Math.round((Number(props.meta.maxBytes) || (60 * 1024 * 1024)) / (1024 * 1024)));
-
                     return h('div', { class: 'vzl-uv' }, [
                         h('div', {
                             class: '@container relative w-full',
@@ -583,11 +544,7 @@
                             onDragleave: onDragLeave,
                             onDrop: onDrop,
                         }, shell),
-                        hasFile ? null : h('div', { class: 'vzl-uv-audio' }, [
-                            soundButton('Med lyd', false),
-                            soundButton('Uden lyd', true),
-                        ]),
-                        h('p', { class: 'vzl-uv-note' }, 'Højst ' + maxMb + ' MB. Videoen gemmes i højst 720p og lav kvalitet.'),
+                        h('p', { class: 'vzl-uv-note' }, 'Højst ' + configuredMax().mb + ' MB.'),
                         error.value ? h('p', { class: 'vzl-uv-warn' }, error.value) : null,
                     ]);
                 };

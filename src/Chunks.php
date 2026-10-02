@@ -12,11 +12,9 @@ use Vizuall\UploadVideo\Encode\Processor;
  */
 final class Chunks
 {
-    public const MAX_BYTES = 60 * 1024 * 1024;
-
-    public static function tooBigMessage(): string
+    public static function tooBigMessage(int $maxBytes): string
     {
-        $mb = (int) round(self::MAX_BYTES / (1024 * 1024));
+        $mb = (int) round($maxBytes / (1024 * 1024));
 
         return 'Videoen må højst være '.$mb.' MB.';
     }
@@ -26,9 +24,9 @@ final class Chunks
         return storage_path('app/upload-video/parts/'.$id);
     }
 
-    public static function maxChunks(): int
+    public static function maxChunks(int $maxBytes): int
     {
-        return max(1, (int) ceil(self::MAX_BYTES / max(1, Value::chunkBytes())));
+        return max(1, (int) ceil($maxBytes / max(1, Value::chunkBytes())));
     }
 
     public static function store(string $id, int $index, UploadedFile $file): void
@@ -42,7 +40,7 @@ final class Chunks
         $file->move($dir, (string) $index);
     }
 
-    public static function finish(string $id, int $total, string $extension): void
+    public static function finish(string $id, int $total, string $extension, int $maxBytes): void
     {
         $dir = self::directory($id);
         $bytes = 0;
@@ -58,9 +56,9 @@ final class Chunks
             $bytes += filesize($part) ?: 0;
         }
 
-        if ($bytes < 1 || $bytes > self::MAX_BYTES) {
+        if ($bytes < 1 || $bytes > $maxBytes) {
             self::forget($id);
-            throw new RuntimeException($bytes < 1 ? 'Vælg en videofil.' : self::tooBigMessage());
+            throw new RuntimeException($bytes < 1 ? 'Vælg en videofil.' : self::tooBigMessage($maxBytes));
         }
 
         $public = Processor::publicDir();

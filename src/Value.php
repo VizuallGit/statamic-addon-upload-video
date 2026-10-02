@@ -8,6 +8,14 @@ final class Value
 {
     public const EXTENSIONS = ['mp4', 'm4v', 'webm', 'mov', 'ogv'];
 
+    public const DEFAULT_MB = 30;
+
+    public const QUALITY = [
+        '10' => 0.1,
+        '50' => 0.5,
+        '70' => 0.7,
+    ];
+
     public static function idOk(string $id): bool
     {
         return (bool) preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $id);
@@ -100,6 +108,62 @@ final class Value
         };
 
         return max(0, $bytes);
+    }
+
+    /**
+     * The blueprint field is the source. Missing or out-of-range values use the defaults.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array{maxMb: int, maxBytes: int, size: int, quality: float, audio: bool}
+     */
+    public static function limits(array $config): array
+    {
+        $mb = (int) ($config['max_mb'] ?? self::DEFAULT_MB);
+
+        if ($mb < 1 || $mb > 1024) {
+            $mb = self::DEFAULT_MB;
+        }
+
+        $size = (int) ($config['size'] ?? 720);
+
+        if (! in_array($size, [720, 1080], true)) {
+            $size = 720;
+        }
+
+        $quality = self::QUALITY[(string) ($config['quality'] ?? '50')] ?? self::QUALITY['50'];
+
+        return [
+            'maxMb' => $mb,
+            'maxBytes' => $mb * 1024 * 1024,
+            'size' => $size,
+            'quality' => $quality,
+            'audio' => ! self::audio($config['mute'] ?? false),
+        ];
+    }
+
+    public static function maxToken(int $bytes, string $key): string
+    {
+        return hash_hmac('sha256', (string) $bytes, $key);
+    }
+
+    /**
+     * Accepts only a max that this fieldtype issued. A changed number does not match the token.
+     */
+    public static function acceptedMax(mixed $bytes, mixed $token, string $key): ?int
+    {
+        $bytes = (int) $bytes;
+
+        if ($bytes < 1024 * 1024 || $bytes > 1024 * 1024 * 1024 || $bytes % (1024 * 1024) !== 0) {
+            return null;
+        }
+
+        $given = is_string($token) ? $token : '';
+
+        if ($given === '' || ! hash_equals(self::maxToken($bytes, $key), $given)) {
+            return null;
+        }
+
+        return $bytes;
     }
 
     public static function chunkBytes(): int

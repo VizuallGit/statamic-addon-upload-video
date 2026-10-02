@@ -40,10 +40,20 @@ class UploadController extends Controller
             return response()->json(['message' => 'Kun videofiler (mp4, webm, mov).'], 422);
         }
 
+        $maxBytes = Value::acceptedMax($request->input('max_bytes'), $request->input('max_token'), (string) config('app.key'));
+
+        if ($maxBytes === null) {
+            return response()->json(['message' => 'Genindlæs siden og prøv igen.'], 422);
+        }
+
         $total = (int) $request->input('total', 0);
         $index = (int) $request->input('index', -1);
 
-        if ($total < 1 || $total > Chunks::maxChunks() || $index < 0 || $index >= $total) {
+        if ($total > Chunks::maxChunks($maxBytes)) {
+            return response()->json(['message' => Chunks::tooBigMessage($maxBytes)], 422);
+        }
+
+        if ($total < 1 || $index < 0 || $index >= $total) {
             return response()->json(['message' => 'Videoen kunne ikke uploades.'], 422);
         }
 
@@ -60,7 +70,7 @@ class UploadController extends Controller
                 return ['id' => $id, 'received' => $index];
             }
 
-            Chunks::finish($id, $total, $extension);
+            Chunks::finish($id, $total, $extension, $maxBytes);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 500);
         }

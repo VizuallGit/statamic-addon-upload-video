@@ -3,7 +3,6 @@
 namespace Vizuall\UploadVideo\Fieldtypes;
 
 use Statamic\Fields\Fieldtype;
-use Vizuall\UploadVideo\Chunks;
 use Vizuall\UploadVideo\Encode\Processor;
 use Vizuall\UploadVideo\Value;
 
@@ -26,12 +25,68 @@ class UploadVideo extends Fieldtype
         return 'upload-video';
     }
 
+    protected function configFieldItems(): array
+    {
+        return [
+            [
+                'display' => 'Video',
+                'fields' => [
+                    'max_mb' => [
+                        'display' => 'Maks. størrelse',
+                        'instructions' => 'Største fil i MB. Teksten ved upload viser præcis dette tal, og en større fil bliver afvist.',
+                        'type' => 'integer',
+                        'default' => Value::DEFAULT_MB,
+                        'validate' => 'required|integer|min:1|max:1024',
+                        'width' => 50,
+                    ],
+                    'size' => [
+                        'display' => 'Opløsning',
+                        'instructions' => 'En større video skaleres ned hertil. En mindre video bliver ikke forstørret.',
+                        'type' => 'select',
+                        'default' => '720',
+                        'options' => [
+                            '720' => '720p',
+                            '1080' => '1080p',
+                        ],
+                        'width' => 50,
+                    ],
+                    'quality' => [
+                        'display' => 'Kvalitet',
+                        'instructions' => 'Lavere kvalitet giver en mindre fil. 10 % passer til en baggrundsvideo.',
+                        'type' => 'select',
+                        'default' => '50',
+                        'options' => [
+                            '10' => '10 %',
+                            '50' => '50 %',
+                            '70' => '70 %',
+                        ],
+                        'width' => 50,
+                    ],
+                    'mute' => [
+                        'display' => 'Uden lyd',
+                        'instructions' => 'Lyden fjernes, når videoen uploades.',
+                        'type' => 'toggle',
+                        'default' => false,
+                        'width' => 50,
+                    ],
+                ],
+            ],
+        ];
+    }
+
     public function preload(): array
     {
+        $limits = Value::limits($this->config() ?? []);
+
         return [
             'uploadUrl' => cp_route('upload-video.store'),
             'chunkBytes' => Value::chunkBytes(),
-            'maxBytes' => Chunks::MAX_BYTES,
+            'maxMb' => $limits['maxMb'],
+            'maxBytes' => $limits['maxBytes'],
+            'maxToken' => Value::maxToken($limits['maxBytes'], (string) config('app.key')),
+            'size' => $limits['size'],
+            'quality' => $limits['quality'],
+            'audio' => $limits['audio'],
             'posterUrl' => cp_route('upload-video.poster', ['id' => '__ID__']),
             'deleteUrl' => cp_route('upload-video.destroy', ['id' => '__ID__']),
         ];
