@@ -197,26 +197,33 @@
 
                     error.value = '';
                     busy.value = true;
-                    status.value = 'Uploader…';
+                    status.value = 'Gør videoen mindre…';
                     const previous = video.value.id;
-                    const chunkBytes = Math.max(1, Number(props.meta.chunkBytes) || (1024 * 1024));
-                    const total = Math.max(1, Math.ceil(file.size / chunkBytes));
 
                     try {
+                        if (!window.VzlUploadVideoShrink || typeof window.VzlUploadVideoShrink.shrink !== 'function') {
+                            throw new Error('Videoen kunne ikke gøres mindre.');
+                        }
+
+                        const smaller = await window.VzlUploadVideoShrink.shrink(file, (progress) => {
+                            status.value = 'Gør videoen mindre… ' + Math.round((Number(progress) || 0) * 100) + ' %';
+                        });
+                        const chunkBytes = Math.max(1, Number(props.meta.chunkBytes) || (1024 * 1024));
+                        const total = Math.max(1, Math.ceil(smaller.size / chunkBytes));
                         let id = '';
                         let saved = null;
 
                         for (let index = 0; index < total; index++) {
                             status.value = total > 1 ? ('Del ' + (index + 1) + ' af ' + total) : 'Uploader…';
-                            const slice = file.slice(index * chunkBytes, Math.min(file.size, (index + 1) * chunkBytes));
+                            const slice = smaller.slice(index * chunkBytes, Math.min(smaller.size, (index + 1) * chunkBytes));
                             const body = new FormData();
                             body.append('index', String(index));
                             body.append('total', String(total));
-                            body.append('filename', file.name);
+                            body.append('filename', smaller.name);
                             if (id) {
                                 body.append('id', id);
                             }
-                            body.append('chunk', slice, file.name);
+                            body.append('chunk', slice, smaller.name);
                             const response = await fetch(props.meta.uploadUrl, {
                                 method: 'POST',
                                 credentials: 'same-origin',
@@ -361,6 +368,8 @@
                             h('button', { type: 'button', class: 'vzl-uv-link', onClick: clear }, 'Fjern'),
                         ]));
                     }
+
+                    children.push(h('p', { class: 'vzl-uv-note' }, 'Videoen gemmes i højst 720p og lav kvalitet.'));
 
                     if (error.value) {
                         children.push(h('p', { class: 'vzl-uv-warn' }, error.value));

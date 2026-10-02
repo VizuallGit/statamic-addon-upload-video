@@ -1,0 +1,11 @@
+{
+    "private": true,
+    "scripts": {
+        "build:shrink": "node resources/js/build-shrink.mjs",
+        "test": "node tests/target-height.mjs"
+    },
+    "devDependencies": {
+        "esbuild": "0.25.1",
+        "mediabunny": "1.55.1"
+    }
+}
