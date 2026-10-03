@@ -470,29 +470,55 @@
                             error.value = 'Vælg en videofil.';
                             return;
                         }
-                        const kept = new Map(videos.value.filter((item) => item.asset).map((item) => [item.asset, item]));
-                        videos.value = videosOnly.slice(0, maxFiles()).map((row) => {
-                            const previous = kept.get(row.id);
-                            return readOne({
-                                asset: row.id,
-                                filename: row.basename || row.filename || '',
-                                extension: row.extension,
-                                url: row.url,
-                                filesize: row.size,
-                                poster_at: previous ? previous.poster_at : 1,
-                                size: previous ? previous.size : 720,
-                                quality: previous ? previous.quality : 'standard',
-                                audio: previous ? previous.audio : true,
-                                duration: row.duration != null ? row.duration : (previous ? previous.duration : null),
-                            });
-                        }).filter(Boolean);
-                        active.value = 0;
-                        emitValue();
+                        const chosen = videosOnly.slice(0, maxFiles());
+                        if (!allowsUploads()) {
+                            const kept = new Map(videos.value.filter((item) => item.asset).map((item) => [item.asset, item]));
+                            videos.value = chosen.map((row) => {
+                                const previous = kept.get(row.id);
+                                return readOne({
+                                    asset: row.id,
+                                    filename: row.basename || row.filename || '',
+                                    extension: row.extension,
+                                    url: row.url,
+                                    filesize: row.size,
+                                    poster_at: previous ? previous.poster_at : 1,
+                                    size: previous ? previous.size : 720,
+                                    quality: previous ? previous.quality : 'standard',
+                                    audio: previous ? previous.audio : true,
+                                    duration: row.duration != null ? row.duration : (previous ? previous.duration : null),
+                                });
+                            }).filter(Boolean);
+                            active.value = 0;
+                            emitValue();
+                            closeBrowser();
+                            return;
+                        }
                         closeBrowser();
+                        if (maxFiles() > 1) {
+                            videos.value = [];
+                            active.value = 0;
+                        }
+                        for (const row of chosen) {
+                            if (!row.url) {
+                                throw new Error('Videoen kunne ikke hentes.');
+                            }
+                            status.value = 'Henter videoen…';
+                            const fileResponse = await fetch(row.url, { credentials: 'same-origin' });
+                            if (!fileResponse.ok) {
+                                throw new Error('Videoen kunne ikke hentes.');
+                            }
+                            const blob = await fileResponse.blob();
+                            const name = row.basename || row.filename || 'video.mp4';
+                            await storeFile(new File([blob], name, { type: blob.type || 'video/mp4' }));
+                            if (error.value) {
+                                return;
+                            }
+                        }
                     } catch (e) {
-                        error.value = 'Videoen kunne ikke vælges.';
+                        error.value = e.message || 'Videoen kunne ikke vælges.';
                     } finally {
                         busy.value = false;
+                        status.value = '';
                     }
                 }
 
