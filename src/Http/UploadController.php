@@ -14,6 +14,8 @@ use Vizuall\UploadVideo\Value;
 
 class UploadController extends Controller
 {
+    private const APPLY_MAX_BYTES = 200 * 1024 * 1024;
+
     public function store(Request $request)
     {
         Chunks::sweep();
@@ -90,6 +92,77 @@ class UploadController extends Controller
             'extension' => $extension,
             'poster_at' => 1,
         ];
+    }
+
+    public function apply(Request $request)
+    {
+        Chunks::sweep();
+
+        $assetId = (string) $request->input('asset', '');
+        $replace = $request->input('replace');
+
+        if (! Value::acceptedApply($assetId, $replace, $request->input('token'), (string) config('app.key'))) {
+            return response()->json(['message' => 'Genindlæs siden og prøv igen.'], 422);
+        }
+
+        $file = $request->file('chunk');
+
+        if ($file === null || ! $file->isValid()) {
+            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 422);
+        }
+
+        if ($file->getSize() > Value::chunkBytes() + 8192) {
+            return response()->json(['message' => 'Serveren afviser så stor en del af filen. Genindlæs siden og prøv igen.'], 422);
+        }
+
+        $extension = strtolower(pathinfo(Value::filename((string) $request->input('filename', '')), PATHINFO_EXTENSION));
+
+        if ($extension !== 'mp4') {
+            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 422);
+        }
+
+        $maxBytes = self::APPLY_MAX_BYTES;
+        $total = (int) $request->input('total', 0);
+        $index = (int) $request->input('index', -1);
+
+        if ($total > Chunks::maxChunks($maxBytes) || $total < 1 || $index < 0 || $index >= $total) {
+            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 422);
+        }
+
+        $id = $index === 0 ? (string) Str::uuid() : (string) $request->input('id', '');
+
+        if (! Value::idOk($id)) {
+            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 422);
+        }
+
+        try {
+            Chunks::store($id, $index, $file);
+
+            if ($index + 1 < $total) {
+                return ['id' => $id, 'received' => $index];
+            }
+
+            Chunks::finish($id, $total, 'mp4', $maxBytes);
+            $replaceFile = filter_var($replace, FILTER_VALIDATE_BOOLEAN);
+
+            if ($replaceFile) {
+                return Library::replace($id, $assetId);
+            }
+
+            $asset = Library::video($assetId);
+            $placed = Library::place(
+                $id,
+                'mp4',
+                pathinfo($asset->basename(), PATHINFO_FILENAME).'.mp4',
+                $asset->container()->handle(),
+                Library::folderOf($asset),
+            );
+            $saved = Library::video($placed['asset']);
+
+            return Library::describe($saved);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
     }
 
     public function posterAsset(Request $request)

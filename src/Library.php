@@ -2,7 +2,9 @@
 
 namespace Vizuall\UploadVideo;
 
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
+use Statamic\Assets\ReplacementFile;
 use Statamic\Contracts\Assets\Asset as AssetContract;
 use Statamic\Facades\Asset;
 use Statamic\Facades\AssetContainer;
@@ -57,6 +59,89 @@ final class Library
             'url' => (string) $asset->url(),
             'filesize' => Str::fileSizeForHumans($asset->size()),
         ];
+    }
+
+    /**
+     * @return array{asset: string, filename: string, extension: string, url: string, filesize: string, edit_url: string}
+     */
+    public static function replace(string $id, string $assetId): array
+    {
+        $asset = self::video($assetId);
+        $user = User::current();
+
+        if ($user === null || ! $user->can('reupload', $asset)) {
+            throw new RuntimeException('Du kan ikke erstatte videoen.');
+        }
+
+        if (strtolower($asset->extension()) !== 'mp4') {
+            throw new RuntimeException('Erstat virker kun på en mp4. Gem som kopi i stedet.');
+        }
+
+        $source = Processor::publicDir().'/'.$id.'.mp4';
+
+        if (! is_file($source)) {
+            throw new RuntimeException('Videoen kunne ikke gemmes.');
+        }
+
+        $contents = file_get_contents($source);
+
+        if ($contents === false) {
+            throw new RuntimeException('Videoen kunne ikke gemmes.');
+        }
+
+        $base = config('statamic.system.file_uploads_path', 'statamic/file-uploads');
+        $relative = $base.'/'.$id.'.mp4';
+        $disk = Storage::disk(config('statamic.system.file_uploads_disk', 'local'));
+        $disk->put($relative, $contents);
+        $asset->reupload(new ReplacementFile($relative));
+        $disk->delete($relative);
+
+        if (is_file($source)) {
+            unlink($source);
+        }
+
+        return self::describe($asset);
+    }
+
+    /**
+     * @return array{asset: string, filename: string, extension: string, url: string, filesize: string, edit_url: string}
+     */
+    public static function describe($asset): array
+    {
+        return [
+            'asset' => $asset->id(),
+            'filename' => $asset->basename(),
+            'extension' => strtolower($asset->extension()),
+            'url' => (string) $asset->url(),
+            'filesize' => Str::fileSizeForHumans($asset->size()),
+            'edit_url' => cp_route('assets.browse.edit', [
+                'asset_container' => $asset->container()->handle(),
+                'path' => $asset->path(),
+            ]),
+        ];
+    }
+
+    public static function video(string $assetId): AssetContract
+    {
+        if (! Value::assetOk($assetId)) {
+            throw new RuntimeException('Ukendt video.');
+        }
+
+        $asset = Asset::find($assetId);
+
+        if ($asset === null || ! $asset->isVideo()) {
+            throw new RuntimeException('Ukendt video.');
+        }
+
+        return $asset;
+    }
+
+    public static function folderOf($asset): string
+    {
+        $path = str_replace('\\', '/', $asset->path());
+        $folder = dirname($path);
+
+        return $folder === '.' ? '' : $folder;
     }
 
     public static function poster(string $assetId, string $contents): string

@@ -1,8 +1,85 @@
 (function () {
     'use strict';
 
+    async function encodeAssetVideo(payload) {
+        if (!payload || !payload.url || !payload.uploadUrl) {
+            return;
+        }
+        if (!window.VzlUploadVideoShrink || typeof window.VzlUploadVideoShrink.shrink !== 'function') {
+            Statamic.$toast.error('Videoen kunne ikke gøres mindre.');
+            return;
+        }
+
+        try {
+            const response = await fetch(payload.url, { credentials: 'same-origin' });
+            if (!response.ok) {
+                throw new Error('Videoen kunne ikke hentes.');
+            }
+            const blob = await response.blob();
+            const name = payload.filename || 'video.mp4';
+            const end = payload.end === null || payload.end === '' || Number(payload.end) <= 0 ? null : Number(payload.end);
+            const smaller = await window.VzlUploadVideoShrink.shrink(new File([blob], name, { type: blob.type || 'video/mp4' }), null, {
+                audio: payload.audio !== false,
+                height: Number(payload.size) === 1080 ? 1080 : 720,
+                quality: Number(payload.quality),
+                start: Math.max(0, Number(payload.start) || 0),
+                end: end,
+            });
+            const chunkBytes = Math.max(1, Number(payload.chunkBytes) || (1024 * 1024));
+            const total = Math.max(1, Math.ceil(smaller.size / chunkBytes));
+            let id = '';
+            let saved = null;
+
+            for (let index = 0; index < total; index++) {
+                const slice = smaller.slice(index * chunkBytes, Math.min(smaller.size, (index + 1) * chunkBytes));
+                const body = new FormData();
+                body.append('index', String(index));
+                body.append('total', String(total));
+                body.append('filename', smaller.name);
+                body.append('asset', payload.asset || '');
+                body.append('replace', payload.replace ? '1' : '0');
+                body.append('token', payload.token || '');
+                if (id) {
+                    body.append('id', id);
+                }
+                body.append('chunk', slice, smaller.name);
+                const uploaded = await fetch(payload.uploadUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-TOKEN': Statamic.$config.get('csrfToken'),
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                    },
+                    body,
+                });
+                const json = await uploaded.json().catch(() => ({}));
+                if (!uploaded.ok || (!json.id && !json.asset)) {
+                    throw new Error(json.message || 'Videoen kunne ikke gemmes.');
+                }
+                id = json.id || id;
+                if (json.asset) {
+                    saved = json;
+                }
+            }
+
+            if (!saved) {
+                throw new Error('Videoen kunne ikke gemmes.');
+            }
+
+            Statamic.$toast.success('Videoen er gemt (' + (saved.filesize || '') + ').');
+            if (saved.edit_url) {
+                window.location.assign(saved.edit_url);
+            }
+        } catch (e) {
+            Statamic.$toast.error(e.message || 'Videoen kunne ikke gemmes.');
+        }
+    }
+
     Statamic.booting(() => {
         const { h, ref, watch } = window.Vue;
+
+        Statamic.$callbacks.add('vzlEncodeAssetVideo', encodeAssetVideo);
 
         Statamic.$components.register('upload-video-fieldtype', {
             inheritAttrs: false,
@@ -470,55 +547,29 @@
                             error.value = 'Vælg en videofil.';
                             return;
                         }
-                        const chosen = videosOnly.slice(0, maxFiles());
-                        if (!allowsUploads()) {
-                            const kept = new Map(videos.value.filter((item) => item.asset).map((item) => [item.asset, item]));
-                            videos.value = chosen.map((row) => {
-                                const previous = kept.get(row.id);
-                                return readOne({
-                                    asset: row.id,
-                                    filename: row.basename || row.filename || '',
-                                    extension: row.extension,
-                                    url: row.url,
-                                    filesize: row.size,
-                                    poster_at: previous ? previous.poster_at : 1,
-                                    size: previous ? previous.size : 720,
-                                    quality: previous ? previous.quality : 'standard',
-                                    audio: previous ? previous.audio : true,
-                                    duration: row.duration != null ? row.duration : (previous ? previous.duration : null),
-                                });
-                            }).filter(Boolean);
-                            active.value = 0;
-                            emitValue();
-                            closeBrowser();
-                            return;
-                        }
+                        const kept = new Map(videos.value.filter((item) => item.asset).map((item) => [item.asset, item]));
+                        videos.value = videosOnly.slice(0, maxFiles()).map((row) => {
+                            const previous = kept.get(row.id);
+                            return readOne({
+                                asset: row.id,
+                                filename: row.basename || row.filename || '',
+                                extension: row.extension,
+                                url: row.url,
+                                filesize: row.size,
+                                poster_at: previous ? previous.poster_at : 1,
+                                size: previous ? previous.size : 720,
+                                quality: previous ? previous.quality : 'standard',
+                                audio: previous ? previous.audio : true,
+                                duration: row.duration != null ? row.duration : (previous ? previous.duration : null),
+                            });
+                        }).filter(Boolean);
+                        active.value = 0;
+                        emitValue();
                         closeBrowser();
-                        if (maxFiles() > 1) {
-                            videos.value = [];
-                            active.value = 0;
-                        }
-                        for (const row of chosen) {
-                            if (!row.url) {
-                                throw new Error('Videoen kunne ikke hentes.');
-                            }
-                            status.value = 'Henter videoen…';
-                            const fileResponse = await fetch(row.url, { credentials: 'same-origin' });
-                            if (!fileResponse.ok) {
-                                throw new Error('Videoen kunne ikke hentes.');
-                            }
-                            const blob = await fileResponse.blob();
-                            const name = row.basename || row.filename || 'video.mp4';
-                            await storeFile(new File([blob], name, { type: blob.type || 'video/mp4' }));
-                            if (error.value) {
-                                return;
-                            }
-                        }
                     } catch (e) {
-                        error.value = e.message || 'Videoen kunne ikke vælges.';
+                        error.value = 'Videoen kunne ikke vælges.';
                     } finally {
                         busy.value = false;
-                        status.value = '';
                     }
                 }
 

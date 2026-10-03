@@ -271,6 +271,25 @@ final class Value
         return hash_hmac('sha256', (string) $bytes, $key);
     }
 
+    public static function applyToken(string $assetId, bool $replace, string $key): string
+    {
+        return hash_hmac('sha256', $assetId.'|'.($replace ? '1' : '0'), $key);
+    }
+
+    public static function acceptedApply(mixed $assetId, mixed $replace, mixed $token, string $key): bool
+    {
+        $assetId = is_string($assetId) ? $assetId : '';
+        $given = is_string($token) ? $token : '';
+
+        if ($assetId === '' || $given === '' || ! self::assetOk($assetId)) {
+            return false;
+        }
+
+        $flag = filter_var($replace, FILTER_VALIDATE_BOOLEAN);
+
+        return hash_equals(self::applyToken($assetId, $flag, $key), $given);
+    }
+
     /**
      * Accepts only a max that this fieldtype issued. A changed number does not match the token.
      */

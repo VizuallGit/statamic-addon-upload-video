@@ -31,9 +31,21 @@ export async function shrink(file, onProgress, options = {}) {
             format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
             target: new BufferTarget(),
         });
+        const trim = {};
+        if (typeof options.start === 'number' && options.start > 0) {
+            trim.start = options.start;
+        }
+        if (typeof options.end === 'number' && options.end > 0) {
+            trim.end = options.end;
+        }
+        if (trim.start != null && trim.end != null && trim.start >= trim.end) {
+            throw new Error('Slut skal ligge efter start.');
+        }
+
         const conversion = await Conversion.init({
             input,
             output,
+            trim: trim.start != null || trim.end != null ? trim : undefined,
             video: async (track) => {
                 if (track.number > 1) {
                     return { discard: true };
