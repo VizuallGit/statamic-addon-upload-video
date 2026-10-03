@@ -1,6 +1,6 @@
 {
     "name": "statamic-addon/upload-video",
-    "description": "Vizuall Upload Video fieldtype",
+    "description": "Fit videos in the asset library and save the first frame as a poster",
     "type": "statamic-addon",
     "license": "proprietary",
     "require": {
@@ -15,7 +15,7 @@
     "extra": {
         "statamic": {
             "name": "Vizuall Upload Video",
-            "description": "Upload a video, pick a poster frame, and publish a smaller file",
+            "description": "Fit videos in the asset library and save the first frame as a poster",
             "provider": "Vizuall\\UploadVideo\\AddonServiceProvider"
         },
         "laravel": {

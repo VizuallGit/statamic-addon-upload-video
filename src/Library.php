@@ -95,6 +95,11 @@ final class Library
         $disk->put($relative, $contents);
         $asset->reupload(new ReplacementFile($relative));
         $disk->delete($relative);
+        $poster = self::posterPath($asset);
+
+        if ($poster !== '' && $asset->container()->disk()->exists($poster)) {
+            $asset->container()->disk()->delete($poster);
+        }
 
         if (is_file($source)) {
             unlink($source);
@@ -146,25 +151,51 @@ final class Library
 
     public static function poster(string $assetId, string $contents): string
     {
-        if (! Value::assetOk($assetId)) {
-            throw new RuntimeException('Ukendt video.');
-        }
-
-        $asset = Asset::find($assetId);
-
-        if ($asset === null) {
-            throw new RuntimeException('Ukendt video.');
-        }
-
+        $asset = self::video($assetId);
         $user = User::current();
 
         if ($user === null || ! $user->can('view', $asset)) {
             throw new RuntimeException('Ukendt video.');
         }
 
-        $path = preg_replace('/\.[^.]+$/', '.poster.jpg', $asset->path()) ?? '';
-        $asset->container()->disk()->put($path, $contents);
+        $path = self::posterPath($asset);
+        $url = self::posterPublicUrl($asset);
 
+        if ($path === '' || $url === '') {
+            throw new RuntimeException('Poster kunne ikke gemmes.');
+        }
+
+        if (! $asset->container()->disk()->exists($path)) {
+            $asset->container()->disk()->put($path, $contents);
+        }
+
+        return $url;
+    }
+
+    public static function posterUrl($asset): ?string
+    {
+        if ($asset === null || ! $asset->isVideo()) {
+            return null;
+        }
+
+        $path = self::posterPath($asset);
+
+        if ($path === '' || ! $asset->container()->disk()->exists($path)) {
+            return null;
+        }
+
+        $url = self::posterPublicUrl($asset);
+
+        return $url === '' ? null : $url;
+    }
+
+    public static function posterPath($asset): string
+    {
+        return preg_replace('/\.[^.]+$/', '.poster.jpg', (string) $asset->path()) ?? '';
+    }
+
+    private static function posterPublicUrl($asset): string
+    {
         return preg_replace('/\.[^.]+$/', '.poster.jpg', (string) $asset->url()) ?? '';
     }
 
