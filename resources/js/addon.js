@@ -347,9 +347,7 @@
                     error.value = '';
                     busy.value = true;
                     const previous = maxFiles() === 1 ? videos.value[0] : null;
-                    const withoutAudio = props.meta.audio === false;
-                    const working = 'Gør videoen mindre…';
-                    status.value = working;
+                    status.value = 'Uploader…';
 
                     try {
                         const max = configuredMax();
@@ -358,32 +356,18 @@
                             throw new Error(tooBig);
                         }
 
-                        if (!window.VzlUploadVideoShrink || typeof window.VzlUploadVideoShrink.shrink !== 'function') {
-                            throw new Error('Videoen kunne ikke gøres mindre.');
-                        }
-
-                        const smaller = await window.VzlUploadVideoShrink.shrink(file, (progress) => {
-                            status.value = working + ' ' + Math.round((Number(progress) || 0) * 100) + ' %';
-                        }, {
-                            audio: !withoutAudio,
-                            height: Number(props.meta.size) === 1080 ? 1080 : 720,
-                            quality: Number(props.meta.quality),
-                        });
-                        if (smaller.size > max.bytes) {
-                            throw new Error(tooBig);
-                        }
                         const chunkBytes = Math.max(1, Number(props.meta.chunkBytes) || (1024 * 1024));
-                        const total = Math.max(1, Math.ceil(smaller.size / chunkBytes));
+                        const total = Math.max(1, Math.ceil(file.size / chunkBytes));
                         let id = '';
                         let saved = null;
 
                         for (let index = 0; index < total; index++) {
                             status.value = total > 1 ? ('Del ' + (index + 1) + ' af ' + total) : 'Uploader…';
-                            const slice = smaller.slice(index * chunkBytes, Math.min(smaller.size, (index + 1) * chunkBytes));
+                            const slice = file.slice(index * chunkBytes, Math.min(file.size, (index + 1) * chunkBytes));
                             const body = new FormData();
                             body.append('index', String(index));
                             body.append('total', String(total));
-                            body.append('filename', smaller.name);
+                            body.append('filename', file.name);
                             if (id) {
                                 body.append('id', id);
                             }
@@ -393,7 +377,7 @@
                             body.append('folder', props.meta.folder && props.meta.folder !== '/' ? props.meta.folder : '');
                             body.append('max_bytes', String(max.bytes));
                             body.append('max_token', props.meta.maxToken || '');
-                            body.append('chunk', slice, smaller.name);
+                            body.append('chunk', slice, file.name);
                             const response = await fetch(props.meta.uploadUrl, {
                                 method: 'POST',
                                 credentials: 'same-origin',
@@ -418,9 +402,7 @@
                             throw new Error('Videoen kunne ikke uploades.');
                         }
 
-                        saved.size = Number(props.meta.size) === 1080 ? 1080 : 720;
                         saved.quality = previous ? previous.quality : 'standard';
-                        saved.audio = !withoutAudio;
                         const item = readOne(saved);
                         if (!item) {
                             throw new Error('Videoen kunne ikke uploades.');

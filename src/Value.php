@@ -218,10 +218,10 @@ final class Value
     }
 
     /**
-     * The blueprint field is the source. Missing or out-of-range values use the defaults.
+     * The blueprint field is the source. Missing or out-of-range values use the default.
      *
      * @param  array<string, mixed>  $config
-     * @return array{maxMb: int, maxBytes: int, size: int, quality: float, audio: bool}
+     * @return array{maxMb: int, maxBytes: int}
      */
     public static function limits(array $config): array
     {
@@ -231,20 +231,9 @@ final class Value
             $mb = self::DEFAULT_MB;
         }
 
-        $size = (int) ($config['size'] ?? 720);
-
-        if (! in_array($size, [720, 1080], true)) {
-            $size = 720;
-        }
-
-        $quality = self::quality($config['quality'] ?? self::DEFAULT_QUALITY);
-
         return [
             'maxMb' => $mb,
             'maxBytes' => $mb * 1024 * 1024,
-            'size' => $size,
-            'quality' => $quality,
-            'audio' => ! self::audio($config['mute'] ?? false),
         ];
     }
 
