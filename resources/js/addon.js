@@ -731,6 +731,7 @@
                                 restrictFolderNavigation: props.meta.restrict === true,
                                 selected: picks.value,
                                 maxFiles: maxFiles(),
+                                columns: props.meta.columns || [],
                                 onSelected: (ids) => {
                                     picks.value = Array.isArray(ids) ? ids.slice(0, maxFiles()) : [];
                                     commitPicks();

@@ -6,6 +6,7 @@ use Illuminate\Support\Collection;
 use Statamic\Contracts\Assets\Asset as AssetContract;
 use Statamic\Contracts\Assets\AssetFolder as AssetFolderContract;
 use Statamic\Contracts\Entries\Entry;
+use Statamic\CP\Column;
 use Statamic\Facades\Asset;
 use Statamic\Facades\AssetContainer;
 use Statamic\Facades\User;
@@ -193,6 +194,7 @@ class UploadVideo extends Fieldtype
             'dynamicPending' => $pending,
             'restrict' => $pending || $dynamic !== '' || filter_var($this->config('restrict'), FILTER_VALIDATE_BOOLEAN),
             'maxFiles' => $this->maxFiles(),
+            'columns' => $this->browserColumns(),
             'container' => $container === null ? null : [
                 'id' => $container->id(),
                 'title' => $container->title(),
@@ -263,6 +265,28 @@ class UploadVideo extends Fieldtype
         }
 
         return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function browserColumns(): array
+    {
+        $container = $this->assetContainer();
+
+        if ($container === null) {
+            return [];
+        }
+
+        $columns = $container->blueprint()->columns()->map(fn ($column) => clone $column);
+
+        $columns->put('basename', Column::make('basename')->label(__('File'))->visible(true)->defaultVisibility(true)->sortable(true)->required(true));
+        $columns->put('size', Column::make('size')->label(__('Size'))->value('size_formatted')->visible(true)->defaultVisibility(true)->sortable(true));
+        $columns->put('last_modified', Column::make('last_modified')->label(__('Last Modified'))->value('last_modified_relative')->visible(true)->defaultVisibility(true)->sortable(true));
+        $columns->put('width', Column::make('width')->label(__('Width'))->value('width')->visible(true)->defaultVisibility(false)->sortable(true));
+        $columns->put('height', Column::make('height')->label(__('Height'))->value('height')->visible(true)->defaultVisibility(false)->sortable(true));
+        $columns->put('duration', Column::make('duration')->label(__('Duration'))->value('duration_formatted')->visible(true)->defaultVisibility(false)->sortable(true));
+
+        $columns->setPreferred('assets.'.$container->handle().'.columns');
+
+        return $columns->rejectUnlisted()->values()->map(fn ($column) => $column->toArray())->all();
     }
 
     private function assetContainer(): mixed
