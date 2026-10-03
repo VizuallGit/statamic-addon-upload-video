@@ -11,6 +11,8 @@ class FitVideo extends Action
 {
     protected $icon = 'video';
 
+    protected $component = 'vzl-fit-video-preview';
+
     public static function title()
     {
         return 'Tilpas video';
