@@ -85,6 +85,7 @@ class FitVideo extends Action
                 'audio' => ! Value::audio($values['mute'] ?? false),
                 'start' => $start,
                 'end' => $end,
+                'poster' => max(0, (int) ($values['poster'] ?? 0)),
             ]],
         ];
     }
@@ -130,6 +131,10 @@ class FitVideo extends Action
                 'instructions' => 'Tom betyder, at videoen kører til den slutter.',
                 'type' => 'integer',
                 'validate' => 'nullable|integer|min:1',
+            ],
+            'poster' => [
+                'type' => 'hidden',
+                'default' => 0,
             ],
             'copy' => [
                 'display' => 'Gem som kopi',

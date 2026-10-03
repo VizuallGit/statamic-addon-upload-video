@@ -101,7 +101,11 @@ class UploadController extends Controller
         }
 
         try {
-            return ['poster' => Library::poster((string) $request->input('asset', ''), $contents)];
+            return ['poster' => Library::poster(
+                (string) $request->input('asset', ''),
+                $contents,
+                $request->boolean('overwrite'),
+            )];
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 404);
         }

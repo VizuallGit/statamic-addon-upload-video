@@ -149,13 +149,17 @@ final class Library
         return $folder === '.' ? '' : $folder;
     }
 
-    public static function poster(string $assetId, string $contents): string
+    public static function poster(string $assetId, string $contents, bool $overwrite = false): string
     {
         $asset = self::video($assetId);
         $user = User::current();
 
         if ($user === null || ! $user->can('view', $asset)) {
             throw new RuntimeException('Ukendt video.');
+        }
+
+        if ($overwrite && ! $user->can('store', [AssetContract::class, $asset->container()])) {
+            throw new RuntimeException('Poster kunne ikke gemmes.');
         }
 
         $path = self::posterPath($asset);
@@ -165,7 +169,7 @@ final class Library
             throw new RuntimeException('Poster kunne ikke gemmes.');
         }
 
-        if (! $asset->container()->disk()->exists($path)) {
+        if ($overwrite || ! $asset->container()->disk()->exists($path)) {
             $asset->container()->disk()->put($path, $contents);
         }
 
