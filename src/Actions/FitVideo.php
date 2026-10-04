@@ -5,6 +5,7 @@ namespace Vizuall\UploadVideo\Actions;
 use Statamic\Actions\Action;
 use Statamic\Contracts\Assets\Asset;
 use Vizuall\UploadVideo\Library;
+use Vizuall\UploadVideo\Strings;
 use Vizuall\UploadVideo\Value;
 
 class FitVideo extends Action
@@ -15,7 +16,7 @@ class FitVideo extends Action
 
     public static function title()
     {
-        return 'Tilpas video';
+        return Strings::line('fit_video');
     }
 
     public function visibleTo($item)
@@ -37,12 +38,12 @@ class FitVideo extends Action
 
     public function buttonText()
     {
-        return 'Gem';
+        return Strings::line('save');
     }
 
     public function confirmationText()
     {
-        return 'Browseren laver videoen, når du gemmer. Det kan tage et øjeblik.';
+        return Strings::line('confirmation');
     }
 
     public function run($assets, $values)
@@ -50,7 +51,7 @@ class FitVideo extends Action
         $asset = $assets->first();
 
         if (! $asset instanceof Asset || ! $asset->isVideo()) {
-            throw new \RuntimeException('Vælg en videofil.');
+            throw new \RuntimeException(Strings::line('pick_video'));
         }
 
         $copy = array_key_exists('copy', $values) ? Value::audio($values['copy']) : true;
@@ -61,17 +62,17 @@ class FitVideo extends Action
         $end = $end === null || $end === '' ? null : max(0, (int) $end);
 
         if ($end !== null && $end <= $start) {
-            throw new \RuntimeException('Slut skal ligge efter start.');
+            throw new \RuntimeException(Strings::line('end_after_start'));
         }
 
         if (! $copy && strtolower($asset->extension()) !== 'mp4') {
-            throw new \RuntimeException('Erstat virker kun på en mp4. Slå Gem som kopi til.');
+            throw new \RuntimeException(Strings::line('replace_mp4'));
         }
 
         Library::video($asset->id());
 
         return [
-            'message' => 'Gør videoen mindre…',
+            'message' => Strings::line('shrinking'),
             'callback' => ['vzlEncodeAssetVideo', [
                 'url' => $asset->url(),
                 'filename' => pathinfo($asset->basename(), PATHINFO_FILENAME).'.mp4',
@@ -94,8 +95,8 @@ class FitVideo extends Action
     {
         return [
             'size' => [
-                'display' => 'Opløsning',
-                'instructions' => 'En større video skaleres ned hertil. En mindre video bliver ikke forstørret.',
+                'display' => Strings::line('resolution'),
+                'instructions' => Strings::line('resolution_help'),
                 'type' => 'select',
                 'default' => '720',
                 'options' => [
@@ -104,8 +105,8 @@ class FitVideo extends Action
                 ],
             ],
             'quality' => [
-                'display' => 'Kvalitet',
-                'instructions' => 'Fra 10 % til 100 %. Lavere kvalitet giver en mindre fil.',
+                'display' => Strings::line('quality'),
+                'instructions' => Strings::line('quality_help'),
                 'type' => 'range',
                 'min' => 10,
                 'max' => 100,
@@ -114,31 +115,25 @@ class FitVideo extends Action
                 'append' => '%',
             ],
             'mute' => [
-                'display' => 'Uden lyd',
-                'instructions' => 'Lyden fjernes i den gemte video.',
+                'display' => Strings::line('mute'),
+                'instructions' => Strings::line('mute_help'),
                 'type' => 'toggle',
                 'default' => false,
             ],
             'start' => [
-                'display' => 'Start (sekunder)',
-                'instructions' => '0 starter fra begyndelsen.',
-                'type' => 'integer',
+                'type' => 'hidden',
                 'default' => 0,
-                'validate' => 'nullable|integer|min:0',
             ],
             'end' => [
-                'display' => 'Slut (sekunder)',
-                'instructions' => 'Tom betyder, at videoen kører til den slutter.',
-                'type' => 'integer',
-                'validate' => 'nullable|integer|min:1',
+                'type' => 'hidden',
             ],
             'poster' => [
                 'type' => 'hidden',
                 'default' => 0,
             ],
             'copy' => [
-                'display' => 'Gem som kopi',
-                'instructions' => 'Slået til beholder originalen. Slået fra erstatter mp4-filen.',
+                'display' => Strings::line('copy'),
+                'instructions' => Strings::line('copy_help'),
                 'type' => 'toggle',
                 'default' => true,
             ],

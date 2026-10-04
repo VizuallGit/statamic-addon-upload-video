@@ -3,6 +3,17 @@
 
     let jobStart = 0;
 
+    function text(key, replace) {
+        const bag = (window.Statamic && Statamic.$config && Statamic.$config.get('vzlFitStrings')) || {};
+        let line = bag[key] || key;
+        if (replace) {
+            Object.keys(replace).forEach((name) => {
+                line = line.split(':' + name).join(String(replace[name]));
+            });
+        }
+        return line;
+    }
+
     function ensureStyles() {
         if (document.getElementById('vzl-fit-styles')) {
             return;
@@ -14,14 +25,14 @@
             '.vzl-fit-note,.vzl-fit-caption{margin:0}',
             '.vzl-fit-note{font-size:.875rem}',
             '.vzl-fit-caption{font-size:.75rem;opacity:.75}',
-            '.vzl-fit-stage{width:min(100%,calc(9.5rem * var(--vzl-ratio, 1.7778)));aspect-ratio:var(--vzl-ratio, 1.7778);border-radius:.25rem;overflow:hidden;cursor:ew-resize;touch-action:none}',
+            '.vzl-fit-stage{width:min(100%,calc(12rem * var(--vzl-ratio, 1.7778)));aspect-ratio:var(--vzl-ratio, 1.7778);border-radius:.25rem;overflow:hidden;cursor:ew-resize;touch-action:none}',
             '.vzl-fit-stage canvas{display:block;width:100%;height:100%}',
-            '.vzl-fit-track{position:relative;height:1.75rem;cursor:ew-resize;touch-action:none}',
-            '.vzl-fit-track>span{position:absolute;left:0;right:0;top:.7rem;height:.35rem;border-radius:999px;background:rgba(255,255,255,.2)}',
-            '.vzl-fit-range{position:absolute;top:0;bottom:0;border-radius:999px;background:#60a5fa}',
-            '.vzl-fit-playhead{position:absolute;top:-.35rem;bottom:-.35rem;width:1px;background:#fff;pointer-events:none}',
-            '.vzl-fit-modes{display:flex;gap:.25rem}',
-            '.vzl-fit-modes button{flex:1;font:inherit;font-size:.75rem;line-height:1.2;padding:.4rem .5rem;border-radius:.25rem;border:1px solid rgba(255,255,255,.28);background:transparent;color:inherit;cursor:pointer}',
+            '.vzl-fit-track{position:relative;height:1.25rem;cursor:pointer;touch-action:none}',
+            '.vzl-fit-bar{position:absolute;left:0;right:0;top:50%;height:.375rem;margin-top:-.1875rem;border-radius:999px;background:rgba(255,255,255,.22);overflow:hidden}',
+            '.vzl-fit-fill{position:absolute;left:0;top:0;bottom:0;background:#3b82f6}',
+            '.vzl-fit-thumb{position:absolute;top:50%;width:1rem;height:1rem;margin:-.5rem 0 0 -.5rem;border-radius:999px;background:#3b82f6;box-shadow:0 0 0 1px rgba(0,0,0,.25);pointer-events:none}',
+            '.vzl-fit-modes{display:flex;flex-wrap:wrap;gap:.25rem}',
+            '.vzl-fit-modes button{flex:0 0 auto;font:inherit;font-size:.6875rem;line-height:1.2;padding:.3rem .55rem;border-radius:.25rem;border:1px solid rgba(255,255,255,.28);background:transparent;color:inherit;cursor:pointer}',
             '.vzl-fit-modes button[aria-pressed=true]{background:rgba(255,255,255,.16)}',
             '#vzl-fit-job{position:fixed;left:1rem;bottom:1rem;z-index:40;width:16rem;padding:.75rem .9rem;border-radius:.5rem;background:#1f2937;color:#f9fafb;box-shadow:0 .5rem 1.5rem rgba(0,0,0,.35);pointer-events:none}',
             '#vzl-fit-job p{margin:0}',
@@ -57,7 +68,7 @@
         if (!quiet && amount > 3 && amount < 100) {
             const left = Math.ceil(((Date.now() - jobStart) / 1000) * (100 - amount) / amount);
             if (left >= 1) {
-                detail += ' · cirka ' + left + ' sek';
+                detail += ' · ' + text('about', { seconds: left });
             }
         }
         node.querySelector('.vzl-fit-job-meta').textContent = detail;
@@ -98,18 +109,20 @@
                 }
 
                 function captionFor(kind, raw, seconds) {
-                    if (kind === 'Poster' && Math.round(seconds) === 0) {
-                        return 'Poster · første billede';
+                    const whole = Math.round(seconds);
+                    if (kind === 'poster' && whole === 0) {
+                        return text('poster_first');
                     }
-                    if (kind === 'Slut' && blankEnd(raw)) {
-                        return 'Slut · til videoen slutter';
+                    if (kind === 'end' && blankEnd(raw)) {
+                        return text('end_through');
                     }
-                    return kind + ' · ' + Math.round(seconds) + ' sek';
+                    const key = kind === 'end' ? 'end_at' : (kind === 'poster' ? 'poster_at' : 'start_at');
+                    return text(key, { seconds: whole });
                 }
 
                 function showFrame(kind, raw) {
                     const video = editorVideo();
-                    const emptyEnd = kind === 'Slut' && blankEnd(raw);
+                    const emptyEnd = kind === 'end' && blankEnd(raw);
                     const seconds = emptyEnd ? (duration.value || 0) : Math.max(0, Number(raw) || 0);
                     caption.value = captionFor(kind, raw, seconds);
                     playhead.value = seconds;
@@ -142,16 +155,36 @@
                                 context.drawImage(video, 0, 0, node.width, node.height);
                             }
                         };
-                        video.pause();
-                        video.addEventListener('seeked', draw, { once: true });
-                        if (Math.abs(video.currentTime - time) < 0.05) {
+                        const paint = () => {
+                            if (video.readyState < 2 || !video.videoWidth) {
+                                video.addEventListener('loadeddata', paint, { once: true });
+                                return;
+                            }
+                            if (typeof video.requestVideoFrameCallback === 'function') {
+                                video.requestVideoFrameCallback(() => draw());
+                            }
                             draw();
+                        };
+                        video.pause();
+                        if (Math.abs(video.currentTime - time) < 0.05) {
+                            paint();
+                            return;
+                        }
+                        video.addEventListener('seeked', paint, { once: true });
+                        if (video.readyState < 1) {
+                            video.addEventListener('loadedmetadata', () => {
+                                try {
+                                    video.currentTime = time;
+                                } catch (e) {
+                                    paint();
+                                }
+                            }, { once: true });
                             return;
                         }
                         try {
                             video.currentTime = time;
                         } catch (e) {
-                            draw();
+                            paint();
                         }
                     };
                     if (video.readyState >= 1) {
@@ -191,36 +224,36 @@
                             seconds = Math.min(seconds, Math.max(0, Math.floor(dur) - 1));
                         }
                         values.start = seconds;
-                        showFrame('Start', seconds);
+                        showFrame('start', seconds);
                         return;
                     }
                     if (mode.value === 'end') {
                         const start = Math.max(0, Number(values.start) || 0);
                         if (dur > 0 && seconds >= Math.floor(dur)) {
                             values.end = null;
-                            showFrame('Slut', '');
+                            showFrame('end', '');
                             return;
                         }
                         values.end = Math.max(start + 1, seconds);
-                        showFrame('Slut', values.end);
+                        showFrame('end', values.end);
                         return;
                     }
                     values.poster = seconds;
-                    showFrame('Poster', seconds);
+                    showFrame('poster', seconds);
                 }
 
                 function selectMode(next) {
                     mode.value = next;
                     const values = props.values || {};
                     if (next === 'start') {
-                        showFrame('Start', values.start);
+                        showFrame('start', values.start);
                         return;
                     }
                     if (next === 'end') {
-                        showFrame('Slut', blankEnd(values.end) ? '' : values.end);
+                        showFrame('end', blankEnd(values.end) ? '' : values.end);
                         return;
                     }
-                    showFrame('Poster', values.poster || 0);
+                    showFrame('poster', values.poster || 0);
                 }
 
                 function scrub(event) {
@@ -307,14 +340,14 @@
                         lastEnd = end;
                         lastPoster = poster;
                         mode.value = 'start';
-                        showFrame('Start', start);
+                        showFrame('start', start);
                         return;
                     }
                     if (String(end ?? '') !== String(lastEnd ?? '')) {
                         lastEnd = end;
                         lastPoster = poster;
                         mode.value = 'end';
-                        showFrame('Slut', blankEnd(end) ? '' : end);
+                        showFrame('end', blankEnd(end) ? '' : end);
                         return;
                     }
                     if (String(poster ?? '') !== String(lastPoster ?? '')) {
@@ -324,21 +357,15 @@
                             return;
                         }
                         mode.value = 'poster';
-                        showFrame('Poster', poster);
+                        showFrame('poster', poster);
                     }
                 }, { deep: true, immediate: true });
 
                 return () => {
                     const dur = duration.value;
-                    const startAt = Math.max(0, Number(props.values && props.values.start) || 0);
-                    const endAt = props.values && !blankEnd(props.values.end) ? Number(props.values.end) : dur;
-                    const range = dur > 0 ? {
-                        left: Math.min(100, (startAt / dur) * 100) + '%',
-                        width: Math.max(0, ((endAt - startAt) / dur) * 100) + '%',
-                    } : { left: '0%', width: '0%' };
-                    const head = dur > 0 ? {
-                        left: Math.min(100, Math.max(0, (playhead.value / dur) * 100)) + '%',
-                    } : { left: '0%' };
+                    const head = dur > 0
+                        ? Math.min(100, Math.max(0, (playhead.value / dur) * 100))
+                        : 0;
 
                     return h('div', {
                         class: 'vzl-fit-preview',
@@ -346,7 +373,7 @@
                         ref: setRoot,
                         onKeydown: onKey,
                     }, [
-                        h('p', { class: 'vzl-fit-note' }, 'Vælg Start, Slut eller Poster. Træk eller rul hen til billedet. Skift hopper ti sekunder.'),
+                        h('p', { class: 'vzl-fit-note' }, text('choose_frame')),
                         h('div', {
                             class: 'vzl-fit-stage',
                             style: { '--vzl-ratio': ratio.value },
@@ -355,15 +382,15 @@
                             h('canvas', { ref: canvas }),
                         ]),
                         h('div', { class: 'vzl-fit-track', onPointerdown: drag }, [
-                            h('span', [
-                                h('i', { class: 'vzl-fit-range', style: range }),
+                            h('span', { class: 'vzl-fit-bar' }, [
+                                h('i', { class: 'vzl-fit-fill', style: { width: head + '%' } }),
                             ]),
-                            h('i', { class: 'vzl-fit-playhead', style: head }),
+                            h('i', { class: 'vzl-fit-thumb', style: { left: head + '%' } }),
                         ]),
                         h('div', { class: 'vzl-fit-modes' }, [
-                            modeButton('start', 'Start'),
-                            modeButton('end', 'Slut'),
-                            modeButton('poster', 'Poster'),
+                            modeButton('start', text('start')),
+                            modeButton('end', text('end')),
+                            modeButton('poster', text('poster')),
                         ]),
                         caption.value ? h('p', { class: 'vzl-fit-caption' }, caption.value) : null,
                     ]);
@@ -401,7 +428,7 @@
                 const width = video.videoWidth;
                 const height = video.videoHeight;
                 if (!width || !height) {
-                    finish(new Error('Poster kunne ikke laves.'));
+                    finish(new Error(text('poster_make_failed')));
                     return;
                 }
                 const node = document.createElement('canvas');
@@ -409,19 +436,19 @@
                 node.height = height;
                 const context = node.getContext('2d');
                 if (!context) {
-                    finish(new Error('Poster kunne ikke laves.'));
+                    finish(new Error(text('poster_make_failed')));
                     return;
                 }
                 context.drawImage(video, 0, 0, width, height);
                 node.toBlob((frame) => {
                     if (!frame) {
-                        finish(new Error('Poster kunne ikke laves.'));
+                        finish(new Error(text('poster_make_failed')));
                         return;
                     }
                     finish(null, frame);
                 }, 'image/jpeg', 0.85);
             };
-            video.addEventListener('error', () => finish(new Error('Poster kunne ikke laves.')), { once: true });
+            video.addEventListener('error', () => finish(new Error(text('poster_make_failed'))), { once: true });
             video.addEventListener('loadeddata', () => {
                 const limit = Number.isFinite(video.duration) && video.duration > 0
                     ? Math.max(0, video.duration - 0.05)
@@ -459,7 +486,7 @@
         });
         if (!saved.ok) {
             const json = await saved.json().catch(() => ({}));
-            throw new Error(json.message || 'Poster kunne ikke gemmes.');
+            throw new Error(json.message || text('poster_failed'));
         }
     }
 
@@ -468,25 +495,25 @@
             return;
         }
         if (!window.VzlUploadVideoShrink || typeof window.VzlUploadVideoShrink.shrink !== 'function') {
-            Statamic.$toast.error('Videoen kunne ikke gøres mindre.');
+            Statamic.$toast.error(text('could_not_shrink'));
             return;
         }
 
         jobStart = Date.now();
-        showJob(0, 'Henter videoen…');
+        showJob(0, text('fetching'));
 
         try {
             const response = await fetch(payload.url, { credentials: 'same-origin' });
             if (!response.ok) {
-                throw new Error('Videoen kunne ikke hentes.');
+                throw new Error(text('could_not_fetch'));
             }
             const blob = await response.blob();
             const posterTask = grabFrame(blob, payload.poster).catch((error) => error);
             const name = payload.filename || 'video.mp4';
             const end = payload.end === null || payload.end === '' || Number(payload.end) <= 0 ? null : Number(payload.end);
-            showJob(0, 'Gør videoen mindre…');
+            showJob(0, text('shrinking'));
             const smaller = await window.VzlUploadVideoShrink.shrink(new File([blob], name, { type: blob.type || 'video/mp4' }), (progress) => {
-                showJob((Number(progress) || 0) * 90, 'Gør videoen mindre…');
+                showJob((Number(progress) || 0) * 90, text('shrinking'));
             }, {
                 audio: payload.audio !== false,
                 height: Number(payload.size) === 1080 ? 1080 : 720,
@@ -500,7 +527,7 @@
             let saved = null;
 
             for (let index = 0; index < total; index++) {
-                showJob(90 + ((index + 1) / total) * 10, 'Uploader…');
+                showJob(90 + ((index + 1) / total) * 10, text('uploading'));
                 const slice = smaller.slice(index * chunkBytes, Math.min(smaller.size, (index + 1) * chunkBytes));
                 const body = new FormData();
                 body.append('index', String(index));
@@ -525,7 +552,7 @@
                 });
                 const json = await uploaded.json().catch(() => ({}));
                 if (!uploaded.ok || (!json.id && !json.asset)) {
-                    throw new Error(json.message || 'Videoen kunne ikke gemmes.');
+                    throw new Error(json.message || text('could_not_save'));
                 }
                 id = json.id || id;
                 if (json.asset) {
@@ -534,23 +561,23 @@
             }
 
             if (!saved) {
-                throw new Error('Videoen kunne ikke gemmes.');
+                throw new Error(text('could_not_save'));
             }
 
             const posterBlob = await posterTask;
             if (posterBlob instanceof Blob && saved.asset) {
-                showJob(100, 'Gemmer billedet…');
+                showJob(100, text('saving_image'));
                 try {
                     await uploadPoster(saved.asset, posterBlob);
                 } catch (error) {
-                    Statamic.$toast.error(error.message || 'Poster kunne ikke gemmes.');
+                    Statamic.$toast.error(error.message || text('poster_failed'));
                 }
             } else if (posterBlob instanceof Error) {
-                Statamic.$toast.error(posterBlob.message || 'Poster kunne ikke gemmes.');
+                Statamic.$toast.error(posterBlob.message || text('poster_failed'));
             }
 
-            showJob(100, 'Videoen er gemt');
-            Statamic.$toast.success('Videoen er gemt (' + (saved.filesize || '') + ').');
+            showJob(100, text('saved'));
+            Statamic.$toast.success(text('saved_size', { size: saved.filesize || '' }));
             window.setTimeout(() => {
                 hideJob();
                 if (saved.edit_url) {
@@ -558,8 +585,8 @@
                 }
             }, 700);
         } catch (e) {
-            showJob(0, e.message || 'Videoen kunne ikke gemmes.', true);
-            Statamic.$toast.error(e.message || 'Videoen kunne ikke gemmes.');
+            showJob(0, e.message || text('could_not_save'), true);
+            Statamic.$toast.error(e.message || text('could_not_save'));
             window.setTimeout(hideJob, 4000);
         }
     }
@@ -687,7 +714,7 @@
         });
         if (!saved.ok) {
             const json = await saved.json().catch(() => ({}));
-            throw new Error(json.message || 'Poster kunne ikke gemmes.');
+            throw new Error(json.message || text('poster_failed'));
         }
     }
 
@@ -728,7 +755,7 @@
             video.dataset.vzlPoster = assetId;
             stop();
             savePoster(video, assetId).catch((e) => {
-                Statamic.$toast.error(e.message || 'Poster kunne ikke gemmes.');
+                Statamic.$toast.error(e.message || text('poster_failed'));
             });
             return true;
         };

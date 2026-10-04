@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 use RuntimeException;
 use Vizuall\UploadVideo\Chunks;
 use Vizuall\UploadVideo\Library;
+use Vizuall\UploadVideo\Strings;
 use Vizuall\UploadVideo\Value;
 
 class UploadController extends Controller
@@ -22,23 +23,23 @@ class UploadController extends Controller
         $replace = $request->input('replace');
 
         if (! Value::acceptedApply($assetId, $replace, $request->input('token'), (string) config('app.key'))) {
-            return response()->json(['message' => 'Genindlæs siden og prøv igen.'], 422);
+            return response()->json(['message' => Strings::line('reload')], 422);
         }
 
         $file = $request->file('chunk');
 
         if ($file === null || ! $file->isValid()) {
-            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 422);
+            return response()->json(['message' => Strings::line('could_not_save')], 422);
         }
 
         if ($file->getSize() > Value::chunkBytes() + 8192) {
-            return response()->json(['message' => 'Serveren afviser så stor en del af filen. Genindlæs siden og prøv igen.'], 422);
+            return response()->json(['message' => Strings::line('chunk_too_big')], 422);
         }
 
         $extension = strtolower(pathinfo(Value::filename((string) $request->input('filename', '')), PATHINFO_EXTENSION));
 
         if ($extension !== 'mp4') {
-            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 422);
+            return response()->json(['message' => Strings::line('could_not_save')], 422);
         }
 
         $maxBytes = self::APPLY_MAX_BYTES;
@@ -46,13 +47,13 @@ class UploadController extends Controller
         $index = (int) $request->input('index', -1);
 
         if ($total > Chunks::maxChunks($maxBytes) || $total < 1 || $index < 0 || $index >= $total) {
-            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 422);
+            return response()->json(['message' => Strings::line('could_not_save')], 422);
         }
 
         $id = $index === 0 ? (string) Str::uuid() : (string) $request->input('id', '');
 
         if (! Value::idOk($id)) {
-            return response()->json(['message' => 'Videoen kunne ikke gemmes.'], 422);
+            return response()->json(['message' => Strings::line('could_not_save')], 422);
         }
 
         try {
@@ -91,13 +92,13 @@ class UploadController extends Controller
         $mime = $file ? (string) $file->getMimeType() : '';
 
         if ($file === null || ! $file->isValid() || ! in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
-            return response()->json(['message' => 'Poster skal være et billede.'], 422);
+            return response()->json(['message' => Strings::line('poster_must_be_image')], 422);
         }
 
         $contents = file_get_contents($file->getRealPath());
 
         if ($contents === false) {
-            return response()->json(['message' => 'Poster kunne ikke gemmes.'], 500);
+            return response()->json(['message' => Strings::line('poster_failed')], 500);
         }
 
         try {
