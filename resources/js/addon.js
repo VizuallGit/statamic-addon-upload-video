@@ -15,22 +15,26 @@
     }
 
     function ensureStyles() {
-        if (document.getElementById('vzl-fit-styles')) {
-            return;
+        let style = document.getElementById('vzl-fit-styles');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'vzl-fit-styles';
+            document.head.appendChild(style);
         }
-        const style = document.createElement('style');
-        style.id = 'vzl-fit-styles';
         style.textContent = [
-            '.vzl-fit-preview{display:flex;flex-direction:column;gap:.5rem;margin-bottom:1rem;outline:none}',
+            '[data-ui-modal-content]:has(.vzl-fit-preview){width:calc(100vw - 2rem);max-width:calc(100vw - 2rem);top:1rem;max-height:calc(100vh - 2rem);overflow:auto}',
+            '.vzl-fit-preview{display:flex;flex-direction:column;gap:.5rem;margin-bottom:1rem;outline:none;width:100%;min-width:0;align-self:stretch}',
             '.vzl-fit-note,.vzl-fit-caption{margin:0}',
             '.vzl-fit-note{font-size:.875rem}',
             '.vzl-fit-caption{font-size:.75rem;opacity:.75}',
-            '.vzl-fit-stage{width:100%;aspect-ratio:16/9;border-radius:.25rem;overflow:hidden;background:#000;cursor:ew-resize;touch-action:none}',
-            '.vzl-fit-stage video{display:block;width:100%;height:100%;object-fit:contain;background:#000;pointer-events:none}',
-            '.vzl-fit-track{position:relative;height:1.75rem;cursor:pointer;touch-action:none}',
-            '.vzl-fit-bar{position:absolute;left:0;right:0;top:50%;height:.5rem;margin-top:-.25rem;border-radius:999px;background:rgba(255,255,255,.22);overflow:hidden}',
+            '.vzl-fit-stage{position:relative;width:100%;min-width:0;align-self:stretch;aspect-ratio:16/9;border-radius:.25rem;overflow:hidden;background:#000;cursor:ew-resize;touch-action:none}',
+            '.vzl-fit-stage video{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;background:#000;pointer-events:none}',
+            '.vzl-fit-track{position:relative;height:2rem;cursor:pointer;touch-action:none}',
+            '.vzl-fit-bar{position:absolute;left:0;right:0;top:50%;height:.55rem;margin-top:-.275rem;border-radius:999px;background:#4b5563;overflow:hidden}',
             '.vzl-fit-fill{position:absolute;top:0;bottom:0;background:#3b82f6}',
-            '.vzl-fit-thumb{position:absolute;top:50%;width:1.125rem;height:1.125rem;margin:-.5625rem 0 0 -.5625rem;border-radius:999px;background:#3b82f6;box-shadow:0 0 0 1px #fff;pointer-events:none}',
+            '.vzl-fit-handle{position:absolute;top:50%;z-index:2;width:.7rem;height:1.45rem;margin:-.725rem 0 0 -.35rem;border-radius:.2rem;background:#9ca3af;box-shadow:0 0 0 1px #fff;cursor:ew-resize}',
+            '.vzl-fit-handle.is-active{background:#fff;box-shadow:0 0 0 2px #3b82f6}',
+            '.vzl-fit-poster-handle{position:absolute;top:50%;z-index:3;width:.9rem;height:.9rem;margin:-.45rem 0 0 -.45rem;border-radius:999px;background:#fff;box-shadow:0 0 0 2px #f59e0b;cursor:ew-resize}',
             '.vzl-fit-modes{display:flex;flex-wrap:wrap;gap:.25rem}',
             '.vzl-fit-modes button{flex:0 0 auto;font:inherit;font-size:.6875rem;line-height:1.2;padding:.3rem .55rem;border-radius:.25rem;border:1px solid rgba(255,255,255,.28);background:transparent;color:inherit;cursor:pointer}',
             '.vzl-fit-modes button[aria-pressed=true]{background:rgba(255,255,255,.16)}',
@@ -41,7 +45,6 @@
             '#vzl-fit-job .vzl-fit-job-bar{height:.25rem;margin-top:.5rem;border-radius:999px;background:rgba(255,255,255,.15);overflow:hidden}',
             '#vzl-fit-job .vzl-fit-job-bar>span{display:block;height:100%;background:#60a5fa}',
         ].join('');
-        document.head.appendChild(style);
     }
 
     function showJob(percent, title, quiet) {
@@ -79,10 +82,6 @@
         if (node) {
             node.remove();
         }
-    }
-
-    function editorVideo() {
-        return [...document.querySelectorAll('video')].find((node) => !node.closest('.vzl-fit-preview') && !node.dataset.vzlGrab);
     }
 
     function registerPreview() {
@@ -142,11 +141,8 @@
                 }
 
                 function previewSource() {
-                    const video = editorVideo();
-                    if (!video) {
-                        return '';
-                    }
-                    return video.currentSrc || video.getAttribute('src') || '';
+                    const given = props.action && props.action.video;
+                    return typeof given === 'string' ? given : '';
                 }
 
                 function stopSourceWatch() {
@@ -346,32 +342,54 @@
                     showFrame('poster', poster);
                 }
 
-                function scrub(event) {
-                    const box = event.currentTarget.getBoundingClientRect();
-                    const ratioAcross = box.width ? (event.clientX - box.left) / box.width : 0;
-                    const clamped = Math.min(1, Math.max(0, ratioAcross));
-                    if (duration.value > 0) {
-                        commit(clamped * duration.value);
-                    }
+                function pointerRatio(surface, pointer) {
+                    const box = surface.getBoundingClientRect();
+                    return Math.min(1, Math.max(0, box.width ? (pointer.clientX - box.left) / box.width : 0));
                 }
 
-                function drag(event) {
+                function showActive(which) {
+                    const values = props.values || {};
+                    if (which === 'end') {
+                        showFrame('end', blankEnd(values.end) ? '' : values.end);
+                        return;
+                    }
+                    if (which === 'poster') {
+                        showFrame('poster', clampPoster(Number(values.poster) || 0));
+                        return;
+                    }
+                    showFrame('start', values.start || 0);
+                }
+
+                function beginDrag(which, surface, event, moveNow) {
                     if (event.button != null && event.button !== 0) {
                         return;
                     }
                     event.preventDefault();
-                    const surface = event.currentTarget;
+                    event.stopPropagation();
+                    mode.value = which;
                     const root = surface.closest('.vzl-fit-preview');
                     if (root) {
                         root.focus({ preventScroll: true });
                     }
-                    scrub(event);
-                    const move = (pointer) => {
-                        const box = surface.getBoundingClientRect();
-                        const ratioAcross = box.width ? (pointer.clientX - box.left) / box.width : 0;
+                    if (!moveNow) {
+                        showActive(which);
+                    }
+                    const apply = (pointer) => {
                         if (duration.value > 0) {
-                            commit(Math.min(1, Math.max(0, ratioAcross)) * duration.value);
+                            commit(pointerRatio(surface, pointer) * duration.value);
                         }
+                    };
+                    if (moveNow) {
+                        apply(event);
+                    }
+                    const startX = event.clientX;
+                    let moved = moveNow;
+                    const move = (pointer) => {
+                        if (!moved && Math.abs(pointer.clientX - startX) < 3) {
+                            return;
+                        }
+                        moved = true;
+                        apply(pointer);
                     };
                     const up = () => {
                         window.removeEventListener('pointermove', move);
@@ -379,6 +397,22 @@
                     };
                     window.addEventListener('pointermove', move);
                     window.addEventListener('pointerup', up);
+                }
+
+                function onTrack(event) {
+                    if (event.target.closest && event.target.closest('.vzl-fit-handle, .vzl-fit-poster-handle')) {
+                        return;
+                    }
+                    const surface = event.currentTarget;
+                    let which = mode.value === 'poster' ? 'poster' : 'start';
+                    if (which !== 'poster' && duration.value > 0) {
+                        const ratio = pointerRatio(surface, event);
+                        const values = props.values || {};
+                        const startAt = Math.max(0, Number(values.start) || 0);
+                        const endAt = blankEnd(values.end) ? duration.value : Math.max(startAt, Number(values.end) || 0);
+                        which = Math.abs(ratio * duration.value - startAt) <= Math.abs(ratio * duration.value - endAt) ? 'start' : 'end';
+                    }
+                    beginDrag(which, surface, event, true);
                 }
 
                 function onWheel(event) {
@@ -462,9 +496,13 @@
                     const endAt = blankEnd(values.end) ? dur : Math.max(startAt, Number(values.end) || 0);
                     const startPct = dur > 0 ? Math.min(100, (startAt / dur) * 100) : 0;
                     const endPct = dur > 0 ? Math.min(100, (endAt / dur) * 100) : 100;
-                    const head = dur > 0
-                        ? Math.min(100, Math.max(0, (playhead.value / dur) * 100))
-                        : 0;
+                    const posterAt = clampPoster(Number(values.poster) || 0);
+                    const posterPct = dur > 0 ? Math.min(endPct, Math.max(startPct, (posterAt / dur) * 100)) : 0;
+                    const handle = (which, pct) => h('i', {
+                        class: ['vzl-fit-handle', mode.value === which ? 'is-active' : ''],
+                        style: { left: pct + '%' },
+                        onPointerdown: (event) => beginDrag(which, event.currentTarget.parentElement, event, false),
+                    });
 
                     return h('div', {
                         class: 'vzl-fit-preview',
@@ -475,16 +513,19 @@
                         h('p', { class: 'vzl-fit-note' }, text('choose_frame')),
                         h('div', {
                             class: 'vzl-fit-stage',
-                            onPointerdown: drag,
+                            style: { width: '100%', aspectRatio: '16 / 9' },
+                            onPointerdown: (event) => beginDrag(mode.value === 'poster' ? 'poster' : mode.value, event.currentTarget, event, true),
                         }, [
                             h('video', {
+                                src: previewSource() || undefined,
+                                poster: (props.action && props.action.poster) || undefined,
                                 muted: true,
                                 playsinline: true,
                                 preload: 'auto',
                                 ref: attachPreview,
                             }),
                         ]),
-                        h('div', { class: 'vzl-fit-track', onPointerdown: drag }, [
+                        h('div', { class: 'vzl-fit-track', onPointerdown: onTrack }, [
                             h('span', { class: 'vzl-fit-bar' }, [
                                 h('i', {
                                     class: 'vzl-fit-fill',
@@ -494,11 +535,15 @@
                                     },
                                 }),
                             ]),
-                            h('i', { class: 'vzl-fit-thumb', style: { left: head + '%' } }),
+                            handle('start', startPct),
+                            handle('end', endPct),
+                            mode.value === 'poster' ? h('i', {
+                                class: 'vzl-fit-poster-handle',
+                                style: { left: posterPct + '%' },
+                                onPointerdown: (event) => beginDrag('poster', event.currentTarget.parentElement, event, false),
+                            }) : null,
                         ]),
                         h('div', { class: 'vzl-fit-modes' }, [
-                            modeButton('start', text('start')),
-                            modeButton('end', text('end')),
                             modeButton('poster', text('poster')),
                         ]),
                         caption.value ? h('p', { class: 'vzl-fit-caption' }, caption.value) : null,

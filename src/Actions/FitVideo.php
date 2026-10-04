@@ -36,6 +36,19 @@ class FitVideo extends Action
             && $user->can('store', [Asset::class, $item->container()]);
     }
 
+    public function toArray()
+    {
+        $payload = parent::toArray();
+        $asset = $this->items->first();
+
+        if ($asset instanceof Asset && $asset->isVideo()) {
+            $payload['video'] = $asset->url();
+            $payload['poster'] = $asset->thumbnailUrl();
+        }
+
+        return $payload;
+    }
+
     public function buttonText()
     {
         return Strings::line('save');
@@ -111,6 +124,7 @@ class FitVideo extends Action
                 'display' => Strings::line('resolution'),
                 'instructions' => Strings::line('resolution_help'),
                 'type' => 'select',
+                'width' => 50,
                 'default' => '720',
                 'options' => [
                     '720' => '720p',
@@ -120,17 +134,27 @@ class FitVideo extends Action
             'quality' => [
                 'display' => Strings::line('quality'),
                 'instructions' => Strings::line('quality_help'),
-                'type' => 'range',
-                'min' => 10,
-                'max' => 100,
-                'step' => 10,
-                'default' => Value::DEFAULT_QUALITY,
-                'append' => '%',
+                'type' => 'select',
+                'width' => 50,
+                'default' => (string) Value::DEFAULT_QUALITY,
+                'options' => [
+                    '10' => '10%',
+                    '20' => '20%',
+                    '30' => '30%',
+                    '40' => '40%',
+                    '50' => '50%',
+                    '60' => '60%',
+                    '70' => '70%',
+                    '80' => '80%',
+                    '90' => '90%',
+                    '100' => '100%',
+                ],
             ],
             'mute' => [
                 'display' => Strings::line('mute'),
                 'instructions' => Strings::line('mute_help'),
                 'type' => 'toggle',
+                'width' => 50,
                 'default' => false,
             ],
             'start' => [
@@ -148,6 +172,7 @@ class FitVideo extends Action
                 'display' => Strings::line('copy'),
                 'instructions' => Strings::line('copy_help'),
                 'type' => 'toggle',
+                'width' => 50,
                 'default' => true,
             ],
         ];

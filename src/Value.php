@@ -312,6 +312,43 @@ final class Value
         return min(1024 * 1024, $safe);
     }
 
+    /**
+     * Glide-justeringer på poster-JPEG'en. Kun kvalitet og format.
+     *
+     * @param  array<string, mixed>  $params
+     * @return array{quality?: int, format?: string}
+     */
+    public static function posterAdjustments(array $params): array
+    {
+        if (array_is_list($params)) {
+            $params = array_filter([
+                'quality' => $params[0] ?? null,
+                'format' => $params[1] ?? null,
+            ], static fn ($value) => $value !== null && $value !== '');
+        }
+
+        $adjustments = [];
+
+        if (isset($params['quality']) && $params['quality'] !== '') {
+            $quality = (int) $params['quality'];
+
+            if ($quality >= 1 && $quality <= 100) {
+                $adjustments['quality'] = $quality;
+            }
+        }
+
+        if (isset($params['format']) && is_string($params['format'])) {
+            $format = strtolower($params['format']);
+            $format = $format === 'jpeg' ? 'jpg' : $format;
+
+            if (in_array($format, ['webp', 'jpg', 'png', 'gif', 'avif'], true)) {
+                $adjustments['format'] = $format;
+            }
+        }
+
+        return $adjustments;
+    }
+
     public static function videoSignatureOk(string $head, string $extension): bool
     {
         return match ($extension) {

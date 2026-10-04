@@ -25,6 +25,13 @@ check(Plan::normalizeSize(700) === 720, 'unknown size falls back to 720');
 check(Plan::normalizeQuality('lower') === 'lower', 'lower quality');
 check(Plan::normalizeQuality('nope') === 'standard', 'unknown quality');
 
+check(Value::posterAdjustments(['quality' => '30', 'format' => 'webp']) === ['quality' => 30, 'format' => 'webp'], 'poster quality and webp');
+check(Value::posterAdjustments(['30', 'webp']) === ['quality' => 30, 'format' => 'webp'], 'poster positional quality and webp');
+check(Value::posterAdjustments(['30']) === ['quality' => 30], 'poster positional quality only');
+check(Value::posterAdjustments(['format' => 'jpeg']) === ['format' => 'jpg'], 'poster jpeg becomes jpg');
+check(Value::posterAdjustments(['quality' => '0', 'format' => 'bmp', 'width' => '1280']) === [], 'poster ignores size and invalid values');
+check(Value::posterAdjustments([]) === [], 'poster without adjustments');
+
 $copy = Plan::videoArguments('/in.mp4', '/out.mp4', null, 'standard', true, 'mp4');
 check(in_array('-c', $copy, true) && in_array('copy', $copy, true), 'mp4 original is copied');
 check(! in_array('-an', $copy, true), 'copy keeps audio');

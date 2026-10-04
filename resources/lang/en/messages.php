@@ -4,7 +4,7 @@ return [
     'fit_video' => 'Fit video',
     'save' => 'Save',
     'confirmation' => 'The browser makes the video when you save. It can take a moment.',
-    'choose_frame' => 'Choose Start, End or Poster. Drag or scroll to the frame. Shift jumps ten seconds.',
+    'choose_frame' => 'Drag the left handle for the start and the right handle for the end. Gray is cut away. Blue is kept. Poster picks the image.',
     'start' => 'Start',
     'end' => 'End',
     'poster' => 'Poster',

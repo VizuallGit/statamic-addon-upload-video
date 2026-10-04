@@ -4,8 +4,11 @@ namespace Vizuall\UploadVideo\Modifiers;
 
 use Statamic\Contracts\Assets\Asset as AssetContract;
 use Statamic\Facades\Asset;
+use Statamic\Facades\Glide;
+use Statamic\Facades\Image;
 use Statamic\Modifiers\Modifier;
 use Vizuall\UploadVideo\Library;
+use Vizuall\UploadVideo\Value;
 
 class VideoPoster extends Modifier
 {
@@ -13,12 +16,31 @@ class VideoPoster extends Modifier
      * The poster JPEG saved beside a video in the asset library.
      *
      * {{ video | video_poster }}
+     * {{ video | video_poster:30:webp }}
      */
     public function index($value, $params, $context)
     {
         $asset = $this->asset($value);
 
-        return $asset === null ? null : Library::posterUrl($asset);
+        if ($asset === null) {
+            return null;
+        }
+
+        $url = Library::posterUrl($asset);
+
+        if ($url === null) {
+            return null;
+        }
+
+        $adjustments = Value::posterAdjustments(is_array($params) ? $params : []);
+
+        if ($adjustments === []) {
+            return $url;
+        }
+
+        $poster = $asset->container()->asset(Library::posterPath($asset));
+
+        return Image::manipulate($poster ?? $url, Glide::normalizeParameters($adjustments));
     }
 
     private function asset(mixed $value): ?AssetContract

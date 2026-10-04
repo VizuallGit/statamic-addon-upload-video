@@ -4,7 +4,7 @@ return [
     'fit_video' => 'Tilpas video',
     'save' => 'Gem',
     'confirmation' => 'Browseren laver videoen, når du gemmer. Det kan tage et øjeblik.',
-    'choose_frame' => 'Vælg Start, Slut eller Poster. Træk eller rul hen til billedet. Skift hopper ti sekunder.',
+    'choose_frame' => 'Træk i venstre håndtag for start og højre for slut. Gråt klippes væk. Blåt beholdes. Poster vælger billedet.',
     'start' => 'Start',
     'end' => 'Slut',
     'poster' => 'Poster',
