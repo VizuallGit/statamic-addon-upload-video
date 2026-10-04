@@ -65,6 +65,8 @@ class FitVideo extends Action
             throw new \RuntimeException(Strings::line('end_after_start'));
         }
 
+        $poster = self::posterInside($start, $end, $values['poster'] ?? 0);
+
         if (! $copy && strtolower($asset->extension()) !== 'mp4') {
             throw new \RuntimeException(Strings::line('replace_mp4'));
         }
@@ -86,9 +88,20 @@ class FitVideo extends Action
                 'audio' => ! Value::audio($values['mute'] ?? false),
                 'start' => $start,
                 'end' => $end,
-                'poster' => max(0, (int) ($values['poster'] ?? 0)),
+                'poster' => $poster,
             ]],
         ];
+    }
+
+    private static function posterInside(int $start, ?int $end, $poster): int
+    {
+        $frame = max($start, (int) $poster);
+
+        if ($end !== null) {
+            $frame = min($end, $frame);
+        }
+
+        return $frame;
     }
 
     protected function fieldItems()

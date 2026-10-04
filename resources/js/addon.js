@@ -25,12 +25,12 @@
             '.vzl-fit-note,.vzl-fit-caption{margin:0}',
             '.vzl-fit-note{font-size:.875rem}',
             '.vzl-fit-caption{font-size:.75rem;opacity:.75}',
-            '.vzl-fit-stage{width:min(100%,calc(12rem * var(--vzl-ratio, 1.7778)));aspect-ratio:var(--vzl-ratio, 1.7778);border-radius:.25rem;overflow:hidden;cursor:ew-resize;touch-action:none}',
-            '.vzl-fit-stage canvas{display:block;width:100%;height:100%}',
-            '.vzl-fit-track{position:relative;height:1.25rem;cursor:pointer;touch-action:none}',
-            '.vzl-fit-bar{position:absolute;left:0;right:0;top:50%;height:.375rem;margin-top:-.1875rem;border-radius:999px;background:rgba(255,255,255,.22);overflow:hidden}',
-            '.vzl-fit-fill{position:absolute;left:0;top:0;bottom:0;background:#3b82f6}',
-            '.vzl-fit-thumb{position:absolute;top:50%;width:1rem;height:1rem;margin:-.5rem 0 0 -.5rem;border-radius:999px;background:#3b82f6;box-shadow:0 0 0 1px rgba(0,0,0,.25);pointer-events:none}',
+            '.vzl-fit-stage{width:100%;aspect-ratio:16/9;border-radius:.25rem;overflow:hidden;background:#000;cursor:ew-resize;touch-action:none}',
+            '.vzl-fit-stage video{display:block;width:100%;height:100%;object-fit:contain;background:#000;pointer-events:none}',
+            '.vzl-fit-track{position:relative;height:1.75rem;cursor:pointer;touch-action:none}',
+            '.vzl-fit-bar{position:absolute;left:0;right:0;top:50%;height:.5rem;margin-top:-.25rem;border-radius:999px;background:rgba(255,255,255,.22);overflow:hidden}',
+            '.vzl-fit-fill{position:absolute;top:0;bottom:0;background:#3b82f6}',
+            '.vzl-fit-thumb{position:absolute;top:50%;width:1.125rem;height:1.125rem;margin:-.5625rem 0 0 -.5625rem;border-radius:999px;background:#3b82f6;box-shadow:0 0 0 1px #fff;pointer-events:none}',
             '.vzl-fit-modes{display:flex;flex-wrap:wrap;gap:.25rem}',
             '.vzl-fit-modes button{flex:0 0 auto;font:inherit;font-size:.6875rem;line-height:1.2;padding:.3rem .55rem;border-radius:.25rem;border:1px solid rgba(255,255,255,.28);background:transparent;color:inherit;cursor:pointer}',
             '.vzl-fit-modes button[aria-pressed=true]{background:rgba(255,255,255,.16)}',
@@ -86,19 +86,19 @@
     }
 
     function registerPreview() {
-        const { h, ref, watch } = window.Vue;
+        const { h, ref, watch, onUnmounted } = window.Vue;
         Statamic.$components.register('vzl-fit-video-preview', {
             props: {
                 action: { type: Object, default: () => ({}) },
                 values: { type: Object, default: () => ({}) },
             },
             setup(props) {
-                const canvas = ref(null);
                 const caption = ref('');
                 const mode = ref('start');
                 const duration = ref(0);
                 const playhead = ref(0);
-                const ratio = ref('1.7778');
+                let previewEl = null;
+                let sourceObserver = null;
                 let lastStart;
                 let lastEnd;
                 let lastPoster;
@@ -120,78 +120,150 @@
                     return text(key, { seconds: whole });
                 }
 
-                function showFrame(kind, raw) {
+                function keptStart() {
+                    return Math.max(0, Math.round(Number((props.values || {}).start) || 0));
+                }
+
+                function keptEnd() {
+                    const values = props.values || {};
+                    if (blankEnd(values.end)) {
+                        return duration.value > 0 ? Math.floor(duration.value) : null;
+                    }
+                    return Math.max(0, Math.round(Number(values.end) || 0));
+                }
+
+                function clampPoster(seconds) {
+                    let next = Math.max(keptStart(), Math.round(seconds));
+                    const end = keptEnd();
+                    if (end !== null) {
+                        next = Math.min(end, next);
+                    }
+                    return next;
+                }
+
+                function previewSource() {
                     const video = editorVideo();
+                    if (!video) {
+                        return '';
+                    }
+                    return video.currentSrc || video.getAttribute('src') || '';
+                }
+
+                function stopSourceWatch() {
+                    if (sourceObserver) {
+                        sourceObserver.disconnect();
+                        sourceObserver = null;
+                    }
+                }
+
+                function movePreview(node, time) {
+                    const limit = Number.isFinite(node.duration) && node.duration > 0
+                        ? Math.max(0, node.duration - 0.05)
+                        : time;
+                    const at = Math.min(Math.max(0, time), limit);
+                    playhead.value = at;
+                    const remember = () => {
+                        if (Number.isFinite(node.duration) && node.duration > 0) {
+                            duration.value = node.duration;
+                        }
+                    };
+                    if (node.readyState >= 2 && Math.abs(node.currentTime - at) < 0.04) {
+                        remember();
+                        return;
+                    }
+                    node.addEventListener('seeked', remember, { once: true });
+                    if (node.readyState < 2) {
+                        node.addEventListener('loadeddata', remember, { once: true });
+                    }
+                    try {
+                        if (node.readyState < 2 && Math.abs((node.currentTime || 0) - at) < 0.001) {
+                            node.addEventListener('seeked', () => {
+                                try {
+                                    node.currentTime = at;
+                                } catch (e) {
+                                    remember();
+                                }
+                            }, { once: true });
+                            node.currentTime = Math.min(limit, at + 0.04);
+                            return;
+                        }
+                        node.currentTime = at;
+                    } catch (e) {
+                        remember();
+                    }
+                }
+
+                function loadPreview(node, time) {
+                    const src = previewSource();
+                    if (!src) {
+                        if (!sourceObserver) {
+                            sourceObserver = new MutationObserver(() => {
+                                if (previewSource() && previewEl) {
+                                    stopSourceWatch();
+                                    loadPreview(previewEl, playhead.value);
+                                }
+                            });
+                            sourceObserver.observe(document.body, {
+                                childList: true,
+                                subtree: true,
+                                attributes: true,
+                                attributeFilter: ['src'],
+                            });
+                        }
+                        return;
+                    }
+                    stopSourceWatch();
+                    if (node.getAttribute('src') !== src) {
+                        node.preload = 'auto';
+                        node.addEventListener('loadedmetadata', () => {
+                            if (Number.isFinite(node.duration) && node.duration > 0) {
+                                duration.value = node.duration;
+                            }
+                            const values = props.values || {};
+                            const at = mode.value === 'end' && blankEnd(values.end)
+                                ? Math.max(0, node.duration - 0.05)
+                                : time;
+                            movePreview(node, at);
+                        }, { once: true });
+                        node.src = src;
+                        return;
+                    }
+                    movePreview(node, time);
+                }
+
+                function showFrame(kind, raw) {
                     const emptyEnd = kind === 'end' && blankEnd(raw);
                     const seconds = emptyEnd ? (duration.value || 0) : Math.max(0, Number(raw) || 0);
                     caption.value = captionFor(kind, raw, seconds);
                     playhead.value = seconds;
-                    if (!video) {
+                    if (!previewEl) {
                         return;
                     }
-                    const apply = () => {
-                        if (Number.isFinite(video.duration) && video.duration > 0) {
-                            duration.value = video.duration;
-                        }
-                        if (video.videoWidth > 0 && video.videoHeight > 0) {
-                            ratio.value = String(video.videoWidth / video.videoHeight);
-                        }
-                        const limit = Number.isFinite(video.duration) && video.duration > 0
-                            ? Math.max(0, video.duration - 0.05)
-                            : seconds;
-                        const time = emptyEnd ? limit : Math.min(Math.max(0, Number(raw) || 0), limit);
-                        playhead.value = time;
-                        caption.value = captionFor(kind, raw, emptyEnd ? 0 : time);
-                        const draw = () => {
-                            const node = canvas.value;
-                            if (!node || !video.videoWidth) {
-                                return;
-                            }
-                            const scale = Math.min(1, 480 / video.videoWidth);
-                            node.width = Math.max(1, Math.round(video.videoWidth * scale));
-                            node.height = Math.max(1, Math.round(video.videoHeight * scale));
-                            const context = node.getContext('2d');
-                            if (context) {
-                                context.drawImage(video, 0, 0, node.width, node.height);
-                            }
-                        };
-                        const paint = () => {
-                            if (video.readyState < 2 || !video.videoWidth) {
-                                video.addEventListener('loadeddata', paint, { once: true });
-                                return;
-                            }
-                            if (typeof video.requestVideoFrameCallback === 'function') {
-                                video.requestVideoFrameCallback(() => draw());
-                            }
-                            draw();
-                        };
-                        video.pause();
-                        if (Math.abs(video.currentTime - time) < 0.05) {
-                            paint();
-                            return;
-                        }
-                        video.addEventListener('seeked', paint, { once: true });
-                        if (video.readyState < 1) {
-                            video.addEventListener('loadedmetadata', () => {
-                                try {
-                                    video.currentTime = time;
-                                } catch (e) {
-                                    paint();
-                                }
-                            }, { once: true });
-                            return;
-                        }
-                        try {
-                            video.currentTime = time;
-                        } catch (e) {
-                            paint();
-                        }
-                    };
-                    if (video.readyState >= 1) {
-                        apply();
-                    } else {
-                        video.addEventListener('loadedmetadata', apply, { once: true });
+                    previewEl.pause();
+                    loadPreview(previewEl, seconds);
+                }
+
+                function attachPreview(el) {
+                    if (el === previewEl) {
+                        return;
                     }
+                    previewEl = el;
+                    if (!el) {
+                        return;
+                    }
+                    el.muted = true;
+                    el.playsInline = true;
+                    el.preload = 'auto';
+                    const values = props.values || {};
+                    if (mode.value === 'end') {
+                        showFrame('end', blankEnd(values.end) ? '' : values.end);
+                        return;
+                    }
+                    if (mode.value === 'poster') {
+                        showFrame('poster', clampPoster(Number(values.poster) || 0));
+                        return;
+                    }
+                    showFrame('start', values.start || 0);
                 }
 
                 function currentSeconds() {
@@ -224,6 +296,9 @@
                             seconds = Math.min(seconds, Math.max(0, Math.floor(dur) - 1));
                         }
                         values.start = seconds;
+                        if ((Number(values.poster) || 0) < seconds) {
+                            values.poster = seconds;
+                        }
                         showFrame('start', seconds);
                         return;
                     }
@@ -231,15 +306,26 @@
                         const start = Math.max(0, Number(values.start) || 0);
                         if (dur > 0 && seconds >= Math.floor(dur)) {
                             values.end = null;
+                            const poster = Number(values.poster) || 0;
+                            if (poster < start) {
+                                values.poster = start;
+                            }
                             showFrame('end', '');
                             return;
                         }
                         values.end = Math.max(start + 1, seconds);
+                        const poster = Number(values.poster) || 0;
+                        if (poster > values.end) {
+                            values.poster = values.end;
+                        }
+                        if (poster < start) {
+                            values.poster = start;
+                        }
                         showFrame('end', values.end);
                         return;
                     }
-                    values.poster = seconds;
-                    showFrame('poster', seconds);
+                    values.poster = clampPoster(seconds);
+                    showFrame('poster', values.poster);
                 }
 
                 function selectMode(next) {
@@ -253,7 +339,11 @@
                         showFrame('end', blankEnd(values.end) ? '' : values.end);
                         return;
                     }
-                    showFrame('poster', values.poster || 0);
+                    const poster = clampPoster(Number(values.poster) || 0);
+                    if ((Number(values.poster) || 0) !== poster) {
+                        values.poster = poster;
+                    }
+                    showFrame('poster', poster);
                 }
 
                 function scrub(event) {
@@ -328,6 +418,10 @@
                     }, label);
                 }
 
+                if (typeof onUnmounted === 'function') {
+                    onUnmounted(() => stopSourceWatch());
+                }
+
                 watch(() => props.values, (values) => {
                     if (!values) {
                         return;
@@ -363,6 +457,11 @@
 
                 return () => {
                     const dur = duration.value;
+                    const values = props.values || {};
+                    const startAt = Math.max(0, Number(values.start) || 0);
+                    const endAt = blankEnd(values.end) ? dur : Math.max(startAt, Number(values.end) || 0);
+                    const startPct = dur > 0 ? Math.min(100, (startAt / dur) * 100) : 0;
+                    const endPct = dur > 0 ? Math.min(100, (endAt / dur) * 100) : 100;
                     const head = dur > 0
                         ? Math.min(100, Math.max(0, (playhead.value / dur) * 100))
                         : 0;
@@ -376,14 +475,24 @@
                         h('p', { class: 'vzl-fit-note' }, text('choose_frame')),
                         h('div', {
                             class: 'vzl-fit-stage',
-                            style: { '--vzl-ratio': ratio.value },
                             onPointerdown: drag,
                         }, [
-                            h('canvas', { ref: canvas }),
+                            h('video', {
+                                muted: true,
+                                playsinline: true,
+                                preload: 'auto',
+                                ref: attachPreview,
+                            }),
                         ]),
                         h('div', { class: 'vzl-fit-track', onPointerdown: drag }, [
                             h('span', { class: 'vzl-fit-bar' }, [
-                                h('i', { class: 'vzl-fit-fill', style: { width: head + '%' } }),
+                                h('i', {
+                                    class: 'vzl-fit-fill',
+                                    style: {
+                                        left: startPct + '%',
+                                        width: Math.max(0, endPct - startPct) + '%',
+                                    },
+                                }),
                             ]),
                             h('i', { class: 'vzl-fit-thumb', style: { left: head + '%' } }),
                         ]),
