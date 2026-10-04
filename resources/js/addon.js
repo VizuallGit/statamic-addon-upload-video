@@ -22,17 +22,16 @@
             document.head.appendChild(style);
         }
         style.textContent = [
-            '[data-ui-modal-content]:has(.vzl-fit-preview){width:calc(100vw - 2rem);max-width:calc(100vw - 2rem);top:1rem;max-height:calc(100vh - 2rem);overflow:auto}',
-            '.vzl-fit-preview{display:flex;flex-direction:column;gap:.5rem;margin-bottom:1rem;outline:none;width:100%;min-width:0;align-self:stretch}',
+            '.vzl-fit-preview{display:flex;flex-direction:column;gap:.5rem;margin-bottom:1rem;outline:none;width:100%}',
             '.vzl-fit-note,.vzl-fit-caption{margin:0}',
             '.vzl-fit-note{font-size:.875rem}',
             '.vzl-fit-caption{font-size:.75rem;opacity:.75}',
-            '.vzl-fit-stage{position:relative;width:100%;min-width:0;align-self:stretch;aspect-ratio:16/9;border-radius:.25rem;overflow:hidden;background:#000;cursor:ew-resize;touch-action:none}',
+            '.vzl-fit-stage{position:relative;width:100%;aspect-ratio:16/9;border-radius:.25rem;overflow:hidden;background:#000;cursor:ew-resize;touch-action:none}',
             '.vzl-fit-stage video{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;background:#000;pointer-events:none}',
             '.vzl-fit-track{position:relative;height:2rem;cursor:pointer;touch-action:none}',
             '.vzl-fit-bar{position:absolute;left:0;right:0;top:50%;height:.55rem;margin-top:-.275rem;border-radius:999px;background:#4b5563;overflow:hidden}',
             '.vzl-fit-fill{position:absolute;top:0;bottom:0;background:#3b82f6}',
-            '.vzl-fit-handle{position:absolute;top:50%;z-index:2;width:.7rem;height:1.45rem;margin:-.725rem 0 0 -.35rem;border-radius:.2rem;background:#9ca3af;box-shadow:0 0 0 1px #fff;cursor:ew-resize}',
+            '.vzl-fit-handle{position:absolute;top:50%;z-index:2;width:1rem;height:1.6rem;margin:-.8rem 0 0 -.5rem;border-radius:.25rem;background:#e5e7eb;box-shadow:0 0 0 1px #111;cursor:ew-resize;touch-action:none}',
             '.vzl-fit-handle.is-active{background:#fff;box-shadow:0 0 0 2px #3b82f6}',
             '.vzl-fit-poster-handle{position:absolute;top:50%;z-index:3;width:.9rem;height:.9rem;margin:-.45rem 0 0 -.45rem;border-radius:999px;background:#fff;box-shadow:0 0 0 2px #f59e0b;cursor:ew-resize}',
             '.vzl-fit-modes{display:flex;flex-wrap:wrap;gap:.25rem}',
@@ -360,13 +359,32 @@
                     showFrame('start', values.start || 0);
                 }
 
+                function knownDuration() {
+                    if (duration.value > 0) {
+                        return duration.value;
+                    }
+                    const node = previewEl;
+                    if (node && Number.isFinite(node.duration) && node.duration > 0) {
+                        duration.value = node.duration;
+                        return node.duration;
+                    }
+                    return 0;
+                }
+
                 function beginDrag(which, surface, event, moveNow) {
-                    if (event.button != null && event.button !== 0) {
+                    if (event.button != null && event.button !== 0 || !surface) {
                         return;
                     }
                     event.preventDefault();
                     event.stopPropagation();
                     mode.value = which;
+                    if (surface.setPointerCapture && event.pointerId != null) {
+                        try {
+                            surface.setPointerCapture(event.pointerId);
+                        } catch (e) {
+                            /* the track still receives the move events */
+                        }
+                    }
                     const root = surface.closest('.vzl-fit-preview');
                     if (root) {
                         root.focus({ preventScroll: true });
@@ -375,8 +393,9 @@
                         showActive(which);
                     }
                     const apply = (pointer) => {
-                        if (duration.value > 0) {
-                            commit(pointerRatio(surface, pointer) * duration.value);
+                        const dur = knownDuration();
+                        if (dur > 0) {
+                            commit(pointerRatio(surface, pointer) * dur);
                         }
                     };
                     if (moveNow) {
@@ -501,7 +520,7 @@
                     const handle = (which, pct) => h('i', {
                         class: ['vzl-fit-handle', mode.value === which ? 'is-active' : ''],
                         style: { left: pct + '%' },
-                        onPointerdown: (event) => beginDrag(which, event.currentTarget.parentElement, event, false),
+                        onPointerdown: (event) => beginDrag(which, event.currentTarget.closest('.vzl-fit-track'), event, true),
                     });
 
                     return h('div', {
@@ -513,8 +532,7 @@
                         h('p', { class: 'vzl-fit-note' }, text('choose_frame')),
                         h('div', {
                             class: 'vzl-fit-stage',
-                            style: { width: '100%', aspectRatio: '16 / 9' },
-                            onPointerdown: (event) => beginDrag(mode.value === 'poster' ? 'poster' : mode.value, event.currentTarget, event, true),
+                            onPointerdown: (event) => beginDrag(mode.value === 'poster' ? 'poster' : (mode.value || 'start'), event.currentTarget, event, true),
                         }, [
                             h('video', {
                                 src: previewSource() || undefined,
@@ -523,6 +541,12 @@
                                 playsinline: true,
                                 preload: 'auto',
                                 ref: attachPreview,
+                                onLoadedmetadata: (event) => {
+                                    const node = event.target;
+                                    if (Number.isFinite(node.duration) && node.duration > 0) {
+                                        duration.value = node.duration;
+                                    }
+                                },
                             }),
                         ]),
                         h('div', { class: 'vzl-fit-track', onPointerdown: onTrack }, [
@@ -540,7 +564,7 @@
                             mode.value === 'poster' ? h('i', {
                                 class: 'vzl-fit-poster-handle',
                                 style: { left: posterPct + '%' },
-                                onPointerdown: (event) => beginDrag('poster', event.currentTarget.parentElement, event, false),
+                                onPointerdown: (event) => beginDrag('poster', event.currentTarget.closest('.vzl-fit-track'), event, true),
                             }) : null,
                         ]),
                         h('div', { class: 'vzl-fit-modes' }, [
