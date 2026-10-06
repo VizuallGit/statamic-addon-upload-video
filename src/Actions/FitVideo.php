@@ -10,7 +10,7 @@ use Vizuall\UploadVideo\Value;
 
 class FitVideo extends Action
 {
-    protected $icon = 'video';
+    protected $icon = 'fieldtype-video';
 
     protected $component = 'vzl-fit-video-preview';
 
@@ -81,7 +81,7 @@ class FitVideo extends Action
         $poster = self::posterInside($start, $end, $values['poster'] ?? 0);
 
         if (! $copy && strtolower($asset->extension()) !== 'mp4') {
-            throw new \RuntimeException(Strings::line('replace_mp4'));
+            throw new \RuntimeException(Strings::line('replace_mp4_copy'));
         }
 
         Library::video($asset->id());
@@ -154,7 +154,7 @@ class FitVideo extends Action
                 'display' => Strings::line('mute'),
                 'instructions' => Strings::line('mute_help'),
                 'type' => 'toggle',
-                'width' => 50,
+                'width' => 100,
                 'default' => false,
             ],
             'start' => [
@@ -169,11 +169,8 @@ class FitVideo extends Action
                 'default' => 0,
             ],
             'copy' => [
-                'display' => Strings::line('copy'),
-                'instructions' => Strings::line('copy_help'),
-                'type' => 'toggle',
-                'width' => 50,
-                'default' => true,
+                'type' => 'hidden',
+                'default' => false,
             ],
         ];
     }

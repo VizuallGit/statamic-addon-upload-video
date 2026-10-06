@@ -31,12 +31,19 @@
             '.vzl-fit-track{position:relative;height:2rem;cursor:pointer;touch-action:none}',
             '.vzl-fit-bar{position:absolute;left:0;right:0;top:50%;height:.55rem;margin-top:-.275rem;border-radius:999px;background:#4b5563;overflow:hidden}',
             '.vzl-fit-fill{position:absolute;top:0;bottom:0;background:#3b82f6}',
-            '.vzl-fit-handle{position:absolute;top:50%;z-index:2;width:1rem;height:1.6rem;margin:-.8rem 0 0 -.5rem;border-radius:.25rem;background:#e5e7eb;box-shadow:0 0 0 1px #111;cursor:ew-resize;touch-action:none}',
+            '.vzl-fit-handle{position:absolute;top:50%;z-index:2;width:.4rem;height:1.1rem;margin:-.55rem 0 0 -.2rem;border-radius:.12rem;background:#e5e7eb;box-shadow:0 0 0 1px #111;cursor:ew-resize;touch-action:none}',
             '.vzl-fit-handle.is-active{background:#fff;box-shadow:0 0 0 2px #3b82f6}',
             '.vzl-fit-poster-handle{position:absolute;top:50%;z-index:3;width:.9rem;height:.9rem;margin:-.45rem 0 0 -.45rem;border-radius:999px;background:#fff;box-shadow:0 0 0 2px #f59e0b;cursor:ew-resize}',
             '.vzl-fit-modes{display:flex;flex-wrap:wrap;gap:.25rem}',
             '.vzl-fit-modes button{flex:0 0 auto;font:inherit;font-size:.6875rem;line-height:1.2;padding:.3rem .55rem;border-radius:.25rem;border:1px solid rgba(255,255,255,.28);background:transparent;color:inherit;cursor:pointer}',
             '.vzl-fit-modes button[aria-pressed=true]{background:rgba(255,255,255,.16)}',
+            '[data-ui-modal-content]:has(.vzl-fit-preview) .publish-fields{display:flex;flex-wrap:wrap;column-gap:.75rem;row-gap:1rem}',
+            '[data-ui-modal-content]:has(.vzl-fit-preview) .publish-fields>.field-w-50{box-sizing:border-box;flex:1 1 calc(50% - .375rem);width:calc(50% - .375rem);max-width:calc(50% - .375rem);min-width:0}',
+            '[data-ui-modal-content]:has(.vzl-fit-preview) .publish-fields>.field-w-100{box-sizing:border-box;flex:1 1 100%;width:100%;max-width:100%}',
+            '[data-ui-modal-content]:has(.vzl-fit-preview) .publish-fields>.form-group.field-w-undefined{display:none}',
+            '[data-ui-modal-content] .vzl-fit-copy{background-color:rgb(156 163 175 / 10%)}',
+            '.dark [data-ui-modal-content] .vzl-fit-copy{background-color:rgb(255 255 255 / 7%)}',
+            '.dark [data-ui-modal-content] .vzl-fit-copy:hover{background-color:rgb(255 255 255 / 12%)}',
             '#vzl-fit-job{position:fixed;left:1rem;bottom:1rem;z-index:40;width:16rem;padding:.75rem .9rem;border-radius:.5rem;background:#1f2937;color:#f9fafb;box-shadow:0 .5rem 1.5rem rgba(0,0,0,.35);pointer-events:none}',
             '#vzl-fit-job p{margin:0}',
             '#vzl-fit-job .vzl-fit-job-title{font-size:.8125rem}',
@@ -84,7 +91,7 @@
     }
 
     function registerPreview() {
-        const { h, ref, watch, onUnmounted } = window.Vue;
+        const { h, ref, watch, nextTick, onUnmounted } = window.Vue;
         Statamic.$components.register('vzl-fit-video-preview', {
             props: {
                 action: { type: Object, default: () => ({}) },
@@ -162,21 +169,25 @@
                             duration.value = node.duration;
                         }
                     };
-                    if (node.readyState >= 2 && Math.abs(node.currentTime - at) < 0.04) {
+                    const painted = () => {
+                        node.dataset.vzlPainted = '1';
+                        remember();
+                    };
+                    if (node.dataset.vzlPainted === '1' && node.readyState >= 2 && Math.abs(node.currentTime - at) < 0.04) {
                         remember();
                         return;
                     }
-                    node.addEventListener('seeked', remember, { once: true });
+                    node.addEventListener('seeked', painted, { once: true });
                     if (node.readyState < 2) {
-                        node.addEventListener('loadeddata', remember, { once: true });
+                        node.addEventListener('loadeddata', painted, { once: true });
                     }
                     try {
-                        if (node.readyState < 2 && Math.abs((node.currentTime || 0) - at) < 0.001) {
+                        if (Math.abs((node.currentTime || 0) - at) < 0.001) {
                             node.addEventListener('seeked', () => {
                                 try {
                                     node.currentTime = at;
                                 } catch (e) {
-                                    remember();
+                                    painted();
                                 }
                             }, { once: true });
                             node.currentTime = Math.min(limit, at + 0.04);
@@ -184,7 +195,7 @@
                         }
                         node.currentTime = at;
                     } catch (e) {
-                        remember();
+                        painted();
                     }
                 }
 
@@ -453,6 +464,67 @@
                     commit(currentSeconds() + step);
                 }
 
+                let saveButton = null;
+
+                function onSaveClick(event) {
+                    if (!event.isTrusted || !props.values) {
+                        return;
+                    }
+                    props.values.copy = false;
+                }
+
+                function onCopyClick() {
+                    if (props.values) {
+                        props.values.copy = true;
+                    }
+                    if (saveButton) {
+                        saveButton.click();
+                    }
+                }
+
+                function ensureCopyButton() {
+                    const root = wheelTarget;
+                    if (!root || !root.isConnected) {
+                        return;
+                    }
+                    const modal = root.closest('[data-ui-modal-content]');
+                    if (!modal) {
+                        return;
+                    }
+                    const save = [...modal.querySelectorAll('button')].find((button) => button.type === 'submit');
+                    if (!save || !save.parentElement) {
+                        return;
+                    }
+                    let button = save.parentElement.querySelector('.vzl-fit-copy');
+                    if (!button) {
+                        const cancel = [...save.parentElement.querySelectorAll('button')].find((node) => node !== save);
+                        button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = ((cancel && cancel.className) || '') + ' vzl-fit-copy';
+                        button.textContent = text('copy');
+                        button.addEventListener('click', onCopyClick);
+                        save.parentElement.insertBefore(button, save);
+                    }
+                    if (saveButton !== save) {
+                        if (saveButton) {
+                            saveButton.removeEventListener('click', onSaveClick, true);
+                        }
+                        save.addEventListener('click', onSaveClick, true);
+                        saveButton = save;
+                    }
+                }
+
+                function removeCopyButton() {
+                    if (saveButton) {
+                        saveButton.removeEventListener('click', onSaveClick, true);
+                        const button = saveButton.parentElement && saveButton.parentElement.querySelector('.vzl-fit-copy');
+                        if (button) {
+                            button.remove();
+                        }
+                    }
+                    saveButton = null;
+                }
+
                 function setRoot(el) {
                     if (wheelTarget) {
                         wheelTarget.removeEventListener('wheel', onWheel);
@@ -460,6 +532,9 @@
                     wheelTarget = el;
                     if (el) {
                         el.addEventListener('wheel', onWheel, { passive: false });
+                        if (typeof nextTick === 'function') {
+                            nextTick(ensureCopyButton);
+                        }
                     }
                 }
 
@@ -472,7 +547,10 @@
                 }
 
                 if (typeof onUnmounted === 'function') {
-                    onUnmounted(() => stopSourceWatch());
+                    onUnmounted(() => {
+                        stopSourceWatch();
+                        removeCopyButton();
+                    });
                 }
 
                 watch(() => props.values, (values) => {
@@ -509,6 +587,9 @@
                 }, { deep: true, immediate: true });
 
                 return () => {
+                    if (typeof nextTick === 'function') {
+                        nextTick(ensureCopyButton);
+                    }
                     const dur = duration.value;
                     const values = props.values || {};
                     const startAt = Math.max(0, Number(values.start) || 0);
@@ -536,7 +617,6 @@
                         }, [
                             h('video', {
                                 src: previewSource() || undefined,
-                                poster: (props.action && props.action.poster) || undefined,
                                 muted: true,
                                 playsinline: true,
                                 preload: 'auto',
@@ -632,15 +712,23 @@
                     ? Math.max(0, video.duration - 0.05)
                     : 0;
                 const time = Math.min(Math.max(0, Number(seconds) || 0), limit);
-                if (time < 0.05) {
+                const at = time < 0.05 ? Math.min(limit, Math.max(time, limit > 0 ? 0.04 : 0)) : time;
+                const paint = () => {
+                    if (!video.videoWidth && typeof video.requestVideoFrameCallback === 'function') {
+                        video.requestVideoFrameCallback(() => draw());
+                        return;
+                    }
                     draw();
+                };
+                if (video.videoWidth > 0 && Math.abs((video.currentTime || 0) - at) < 0.001) {
+                    paint();
                     return;
                 }
-                video.addEventListener('seeked', draw, { once: true });
+                video.addEventListener('seeked', paint, { once: true });
                 try {
-                    video.currentTime = time;
+                    video.currentTime = at;
                 } catch (e) {
-                    draw();
+                    paint();
                 }
             }, { once: true });
         });
